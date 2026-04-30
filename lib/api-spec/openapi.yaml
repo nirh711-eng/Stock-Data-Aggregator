@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: stocks
+    description: Stock data operations
 paths:
   /healthz:
     get:
@@ -24,6 +26,98 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /stocks/{ticker}:
+    get:
+      operationId: getStockData
+      tags: [stocks]
+      summary: Get live stock data
+      description: Returns ticker, market cap, P/E ratio, quarterly report, upcoming events, and AI summary
+      parameters:
+        - name: ticker
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Stock data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StockData"
+        "404":
+          description: Stock not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /stocks/{ticker}/summary:
+    get:
+      operationId: getStockSummary
+      tags: [stocks]
+      summary: Get AI-generated stock summary
+      description: Returns an AI-generated brief analysis of the stock
+      parameters:
+        - name: ticker
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: AI summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StockSummary"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /stocks/{ticker}/history:
+    get:
+      operationId: getStockHistory
+      tags: [stocks]
+      summary: Get stock price history
+      description: Returns historical price data for charting
+      parameters:
+        - name: ticker
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: period
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["1d", "5d", "1mo", "3mo", "6mo", "1y"]
+            default: "1mo"
+      responses:
+        "200":
+          description: Historical price data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StockHistory"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -34,3 +128,171 @@ components:
       required:
         - status
 
+    StockData:
+      type: object
+      properties:
+        ticker:
+          type: string
+        companyName:
+          type: string
+        price:
+          type: number
+        priceChange:
+          type: number
+        priceChangePercent:
+          type: number
+        marketCap:
+          type: number
+        marketCapFormatted:
+          type: string
+        peRatio:
+          type: number
+          nullable: true
+        eps:
+          type: number
+          nullable: true
+        quarterlyReport:
+          $ref: "#/components/schemas/QuarterlyReport"
+        upcomingEvents:
+          type: array
+          items:
+            $ref: "#/components/schemas/StockEvent"
+        currency:
+          type: string
+        exchange:
+          type: string
+        sector:
+          type: string
+          nullable: true
+        industry:
+          type: string
+          nullable: true
+        website:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        aiSummary:
+          type: string
+          nullable: true
+      required:
+        - ticker
+        - companyName
+        - price
+        - priceChange
+        - priceChangePercent
+        - marketCap
+        - marketCapFormatted
+        - quarterlyReport
+        - upcomingEvents
+        - currency
+        - exchange
+
+    QuarterlyReport:
+      type: object
+      properties:
+        period:
+          type: string
+        revenue:
+          type: number
+          nullable: true
+        revenueFormatted:
+          type: string
+          nullable: true
+        netIncome:
+          type: number
+          nullable: true
+        netIncomeFormatted:
+          type: string
+          nullable: true
+        eps:
+          type: number
+          nullable: true
+        revenueGrowth:
+          type: number
+          nullable: true
+        reportDate:
+          type: string
+          nullable: true
+      required:
+        - period
+
+    StockEvent:
+      type: object
+      properties:
+        title:
+          type: string
+        date:
+          type: string
+        type:
+          type: string
+          enum: ["earnings", "dividend", "conference", "other"]
+        description:
+          type: string
+          nullable: true
+      required:
+        - title
+        - date
+        - type
+
+    StockSummary:
+      type: object
+      properties:
+        ticker:
+          type: string
+        summary:
+          type: string
+        generatedAt:
+          type: string
+      required:
+        - ticker
+        - summary
+        - generatedAt
+
+    StockHistory:
+      type: object
+      properties:
+        ticker:
+          type: string
+        period:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/PricePoint"
+      required:
+        - ticker
+        - period
+        - data
+
+    PricePoint:
+      type: object
+      properties:
+        date:
+          type: string
+        open:
+          type: number
+        high:
+          type: number
+        low:
+          type: number
+        close:
+          type: number
+        volume:
+          type: number
+      required:
+        - date
+        - close
+        - volume
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+        message:
+          type: string
+      required:
+        - error
+        - message

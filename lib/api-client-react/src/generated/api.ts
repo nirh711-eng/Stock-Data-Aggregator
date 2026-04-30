@@ -13,7 +13,14 @@ import type {
   UseQueryResult,
 } from "@tanstack/react-query";
 
-import type { HealthStatus } from "./api.schemas";
+import type {
+  ErrorResponse,
+  GetStockHistoryParams,
+  HealthStatus,
+  StockData,
+  StockHistory,
+  StockSummary,
+} from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
 import type { ErrorType } from "../custom-fetch";
@@ -92,6 +99,295 @@ export function useHealthCheck<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getHealthCheckQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns ticker, market cap, P/E ratio, quarterly report, upcoming events, and AI summary
+ * @summary Get live stock data
+ */
+export const getGetStockDataUrl = (ticker: string) => {
+  return `/api/stocks/${ticker}`;
+};
+
+export const getStockData = async (
+  ticker: string,
+  options?: RequestInit,
+): Promise<StockData> => {
+  return customFetch<StockData>(getGetStockDataUrl(ticker), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetStockDataQueryKey = (ticker: string) => {
+  return [`/api/stocks/${ticker}`] as const;
+};
+
+export const getGetStockDataQueryOptions = <
+  TData = Awaited<ReturnType<typeof getStockData>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  ticker: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getStockData>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetStockDataQueryKey(ticker);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getStockData>>> = ({
+    signal,
+  }) => getStockData(ticker, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!ticker,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getStockData>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetStockDataQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getStockData>>
+>;
+export type GetStockDataQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get live stock data
+ */
+
+export function useGetStockData<
+  TData = Awaited<ReturnType<typeof getStockData>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  ticker: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getStockData>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetStockDataQueryOptions(ticker, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns an AI-generated brief analysis of the stock
+ * @summary Get AI-generated stock summary
+ */
+export const getGetStockSummaryUrl = (ticker: string) => {
+  return `/api/stocks/${ticker}/summary`;
+};
+
+export const getStockSummary = async (
+  ticker: string,
+  options?: RequestInit,
+): Promise<StockSummary> => {
+  return customFetch<StockSummary>(getGetStockSummaryUrl(ticker), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetStockSummaryQueryKey = (ticker: string) => {
+  return [`/api/stocks/${ticker}/summary`] as const;
+};
+
+export const getGetStockSummaryQueryOptions = <
+  TData = Awaited<ReturnType<typeof getStockSummary>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  ticker: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getStockSummary>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetStockSummaryQueryKey(ticker);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getStockSummary>>> = ({
+    signal,
+  }) => getStockSummary(ticker, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!ticker,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getStockSummary>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetStockSummaryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getStockSummary>>
+>;
+export type GetStockSummaryQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get AI-generated stock summary
+ */
+
+export function useGetStockSummary<
+  TData = Awaited<ReturnType<typeof getStockSummary>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  ticker: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getStockSummary>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetStockSummaryQueryOptions(ticker, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns historical price data for charting
+ * @summary Get stock price history
+ */
+export const getGetStockHistoryUrl = (
+  ticker: string,
+  params?: GetStockHistoryParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/stocks/${ticker}/history?${stringifiedParams}`
+    : `/api/stocks/${ticker}/history`;
+};
+
+export const getStockHistory = async (
+  ticker: string,
+  params?: GetStockHistoryParams,
+  options?: RequestInit,
+): Promise<StockHistory> => {
+  return customFetch<StockHistory>(getGetStockHistoryUrl(ticker, params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetStockHistoryQueryKey = (
+  ticker: string,
+  params?: GetStockHistoryParams,
+) => {
+  return [
+    `/api/stocks/${ticker}/history`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetStockHistoryQueryOptions = <
+  TData = Awaited<ReturnType<typeof getStockHistory>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  ticker: string,
+  params?: GetStockHistoryParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getStockHistory>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetStockHistoryQueryKey(ticker, params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getStockHistory>>> = ({
+    signal,
+  }) => getStockHistory(ticker, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!ticker,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getStockHistory>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetStockHistoryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getStockHistory>>
+>;
+export type GetStockHistoryQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get stock price history
+ */
+
+export function useGetStockHistory<
+  TData = Awaited<ReturnType<typeof getStockHistory>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  ticker: string,
+  params?: GetStockHistoryParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getStockHistory>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetStockHistoryQueryOptions(ticker, params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

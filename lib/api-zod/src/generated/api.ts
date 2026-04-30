@@ -14,3 +14,93 @@ import * as zod from "zod";
 export const HealthCheckResponse = zod.object({
   status: zod.string(),
 });
+
+/**
+ * Returns ticker, market cap, P/E ratio, quarterly report, upcoming events, and AI summary
+ * @summary Get live stock data
+ */
+export const GetStockDataParams = zod.object({
+  ticker: zod.coerce.string(),
+});
+
+export const GetStockDataResponse = zod.object({
+  ticker: zod.string(),
+  companyName: zod.string(),
+  price: zod.number(),
+  priceChange: zod.number(),
+  priceChangePercent: zod.number(),
+  marketCap: zod.number(),
+  marketCapFormatted: zod.string(),
+  peRatio: zod.number().nullish(),
+  eps: zod.number().nullish(),
+  quarterlyReport: zod.object({
+    period: zod.string(),
+    revenue: zod.number().nullish(),
+    revenueFormatted: zod.string().nullish(),
+    netIncome: zod.number().nullish(),
+    netIncomeFormatted: zod.string().nullish(),
+    eps: zod.number().nullish(),
+    revenueGrowth: zod.number().nullish(),
+    reportDate: zod.string().nullish(),
+  }),
+  upcomingEvents: zod.array(
+    zod.object({
+      title: zod.string(),
+      date: zod.string(),
+      type: zod.enum(["earnings", "dividend", "conference", "other"]),
+      description: zod.string().nullish(),
+    }),
+  ),
+  currency: zod.string(),
+  exchange: zod.string(),
+  sector: zod.string().nullish(),
+  industry: zod.string().nullish(),
+  website: zod.string().nullish(),
+  description: zod.string().nullish(),
+  aiSummary: zod.string().nullish(),
+});
+
+/**
+ * Returns an AI-generated brief analysis of the stock
+ * @summary Get AI-generated stock summary
+ */
+export const GetStockSummaryParams = zod.object({
+  ticker: zod.coerce.string(),
+});
+
+export const GetStockSummaryResponse = zod.object({
+  ticker: zod.string(),
+  summary: zod.string(),
+  generatedAt: zod.string(),
+});
+
+/**
+ * Returns historical price data for charting
+ * @summary Get stock price history
+ */
+export const GetStockHistoryParams = zod.object({
+  ticker: zod.coerce.string(),
+});
+
+export const getStockHistoryQueryPeriodDefault = `1mo`;
+
+export const GetStockHistoryQueryParams = zod.object({
+  period: zod
+    .enum(["1d", "5d", "1mo", "3mo", "6mo", "1y"])
+    .default(getStockHistoryQueryPeriodDefault),
+});
+
+export const GetStockHistoryResponse = zod.object({
+  ticker: zod.string(),
+  period: zod.string(),
+  data: zod.array(
+    zod.object({
+      date: zod.string(),
+      open: zod.number().optional(),
+      high: zod.number().optional(),
+      low: zod.number().optional(),
+      close: zod.number(),
+      volume: zod.number(),
+    }),
+  ),
+});

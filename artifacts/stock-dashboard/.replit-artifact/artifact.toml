@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "Stock Dashboard"
+version = "1.0.0"
+id = "artifacts/stock-dashboard"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 22996
+
+[services.development]
+run = "pnpm --filter @workspace/stock-dashboard run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/stock-dashboard", "run", "build" ]
+publicDir = "artifacts/stock-dashboard/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "22996"
+BASE_PATH = "/"

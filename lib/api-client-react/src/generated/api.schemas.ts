@@ -8,3 +8,94 @@
 export interface HealthStatus {
   status: string;
 }
+
+export interface QuarterlyReport {
+  period: string;
+  revenue?: number | null;
+  revenueFormatted?: string | null;
+  netIncome?: number | null;
+  netIncomeFormatted?: string | null;
+  eps?: number | null;
+  revenueGrowth?: number | null;
+  reportDate?: string | null;
+}
+
+export type StockEventType =
+  (typeof StockEventType)[keyof typeof StockEventType];
+
+export const StockEventType = {
+  earnings: "earnings",
+  dividend: "dividend",
+  conference: "conference",
+  other: "other",
+} as const;
+
+export interface StockEvent {
+  title: string;
+  date: string;
+  type: StockEventType;
+  description?: string | null;
+}
+
+export interface StockData {
+  ticker: string;
+  companyName: string;
+  price: number;
+  priceChange: number;
+  priceChangePercent: number;
+  marketCap: number;
+  marketCapFormatted: string;
+  peRatio?: number | null;
+  eps?: number | null;
+  quarterlyReport: QuarterlyReport;
+  upcomingEvents: StockEvent[];
+  currency: string;
+  exchange: string;
+  sector?: string | null;
+  industry?: string | null;
+  website?: string | null;
+  description?: string | null;
+  aiSummary?: string | null;
+}
+
+export interface StockSummary {
+  ticker: string;
+  summary: string;
+  generatedAt: string;
+}
+
+export interface PricePoint {
+  date: string;
+  open?: number;
+  high?: number;
+  low?: number;
+  close: number;
+  volume: number;
+}
+
+export interface StockHistory {
+  ticker: string;
+  period: string;
+  data: PricePoint[];
+}
+
+export interface ErrorResponse {
+  error: string;
+  message: string;
+}
+
+export type GetStockHistoryParams = {
+  period?: GetStockHistoryPeriod;
+};
+
+export type GetStockHistoryPeriod =
+  (typeof GetStockHistoryPeriod)[keyof typeof GetStockHistoryPeriod];
+
+export const GetStockHistoryPeriod = {
+  "1d": "1d",
+  "5d": "5d",
+  "1mo": "1mo",
+  "3mo": "3mo",
+  "6mo": "6mo",
+  "1y": "1y",
+} as const;
