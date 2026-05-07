@@ -159,6 +159,11 @@ Focus on key strengths, risks, and what investors should watch.`;
       website: profile?.website ?? null,
       description: profile?.longBusinessSummary ?? null,
       aiSummary,
+      marketState: (q.marketState as string) ?? null,
+      preMarketPrice: q.preMarketPrice ?? null,
+      preMarketChangePercent: q.preMarketChangePercent ?? null,
+      postMarketPrice: q.postMarketPrice ?? null,
+      postMarketChangePercent: q.postMarketChangePercent ?? null,
     };
 
     res.json(stockData);

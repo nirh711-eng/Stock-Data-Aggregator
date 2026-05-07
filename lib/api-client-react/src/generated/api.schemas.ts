@@ -9,6 +9,19 @@ export interface HealthStatus {
   status: string;
 }
 
+export type StockDataMarketState =
+  | (typeof StockDataMarketState)[keyof typeof StockDataMarketState]
+  | null;
+
+export const StockDataMarketState = {
+  PRE: "PRE",
+  REGULAR: "REGULAR",
+  POST: "POST",
+  POSTPOST: "POSTPOST",
+  PREPRE: "PREPRE",
+  CLOSED: "CLOSED",
+} as const;
+
 export interface QuarterlyReport {
   period: string;
   revenue?: number | null;
@@ -56,6 +69,11 @@ export interface StockData {
   website?: string | null;
   description?: string | null;
   aiSummary?: string | null;
+  marketState?: StockDataMarketState;
+  preMarketPrice?: number | null;
+  preMarketChangePercent?: number | null;
+  postMarketPrice?: number | null;
+  postMarketChangePercent?: number | null;
 }
 
 export interface StockSummary {

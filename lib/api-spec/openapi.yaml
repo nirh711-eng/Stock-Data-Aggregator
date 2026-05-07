@@ -234,6 +234,22 @@ components:
         aiSummary:
           type: string
           nullable: true
+        marketState:
+          type: string
+          enum: ["PRE", "REGULAR", "POST", "POSTPOST", "PREPRE", "CLOSED"]
+          nullable: true
+        preMarketPrice:
+          type: number
+          nullable: true
+        preMarketChangePercent:
+          type: number
+          nullable: true
+        postMarketPrice:
+          type: number
+          nullable: true
+        postMarketChangePercent:
+          type: number
+          nullable: true
       required:
         - ticker
         - companyName

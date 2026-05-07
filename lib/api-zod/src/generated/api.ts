@@ -58,6 +58,13 @@ export const GetStockDataResponse = zod.object({
   website: zod.string().nullish(),
   description: zod.string().nullish(),
   aiSummary: zod.string().nullish(),
+  marketState: zod
+    .enum(["PRE", "REGULAR", "POST", "POSTPOST", "PREPRE", "CLOSED"])
+    .nullish(),
+  preMarketPrice: zod.number().nullish(),
+  preMarketChangePercent: zod.number().nullish(),
+  postMarketPrice: zod.number().nullish(),
+  postMarketChangePercent: zod.number().nullish(),
 });
 
 /**

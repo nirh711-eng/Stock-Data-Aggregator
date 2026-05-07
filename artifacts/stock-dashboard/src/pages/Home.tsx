@@ -232,7 +232,36 @@ export default function Home() {
                 )}
               </div>
               
-              <div className="text-left md:text-right">
+              <div className="text-left md:text-right space-y-1">
+                {/* Market state badge */}
+                <div className="flex items-center gap-2 justify-start md:justify-end mb-1">
+                  {stockData.marketState === "REGULAR" && (
+                    <span className="flex items-center gap-1.5 text-xs font-medium text-positive bg-positive/10 px-2 py-0.5 rounded-full">
+                      <span className="w-1.5 h-1.5 rounded-full bg-positive animate-pulse" />
+                      שוק פתוח
+                    </span>
+                  )}
+                  {(stockData.marketState === "PRE" || stockData.marketState === "PREPRE") && (
+                    <span className="flex items-center gap-1.5 text-xs font-medium text-yellow-400 bg-yellow-400/10 px-2 py-0.5 rounded-full">
+                      <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
+                      Pre-Market
+                    </span>
+                  )}
+                  {(stockData.marketState === "POST" || stockData.marketState === "POSTPOST") && (
+                    <span className="flex items-center gap-1.5 text-xs font-medium text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded-full">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                      After-Hours
+                    </span>
+                  )}
+                  {stockData.marketState === "CLOSED" && (
+                    <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+                      <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground" />
+                      שוק סגור
+                    </span>
+                  )}
+                </div>
+
+                {/* Main price */}
                 <div className="flex items-center gap-2 justify-start md:justify-end">
                   <span className="text-4xl font-bold font-mono">
                     {formatHebrewNumber(stockData.price, { style: 'currency', currency: stockData.currency })}
@@ -244,6 +273,36 @@ export default function Home() {
                     {stockData.priceChange >= 0 ? '+' : ''}{formatHebrewNumber(stockData.priceChange)} ({stockData.priceChangePercent > 0 ? '+' : ''}{formatHebrewNumber(stockData.priceChangePercent, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%)
                   </span>
                 </div>
+
+                {/* Pre-market price */}
+                {stockData.preMarketPrice != null && (stockData.marketState === "PRE" || stockData.marketState === "PREPRE") && (
+                  <div className="flex items-center gap-2 justify-start md:justify-end mt-2 bg-yellow-400/5 border border-yellow-400/20 rounded-lg px-3 py-1.5">
+                    <span className="text-xs text-yellow-400/70 font-medium">Pre-Market</span>
+                    <span className="font-mono font-semibold text-yellow-300">
+                      {formatHebrewNumber(stockData.preMarketPrice, { style: 'currency', currency: stockData.currency })}
+                    </span>
+                    {stockData.preMarketChangePercent != null && (
+                      <span className={`text-xs font-mono ${stockData.preMarketChangePercent >= 0 ? 'text-positive' : 'text-destructive'}`}>
+                        {stockData.preMarketChangePercent >= 0 ? '+' : ''}{formatHebrewNumber(stockData.preMarketChangePercent, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {/* Post-market price */}
+                {stockData.postMarketPrice != null && (stockData.marketState === "POST" || stockData.marketState === "POSTPOST" || stockData.marketState === "CLOSED") && (
+                  <div className="flex items-center gap-2 justify-start md:justify-end mt-2 bg-blue-400/5 border border-blue-400/20 rounded-lg px-3 py-1.5">
+                    <span className="text-xs text-blue-400/70 font-medium">After-Hours</span>
+                    <span className="font-mono font-semibold text-blue-300">
+                      {formatHebrewNumber(stockData.postMarketPrice, { style: 'currency', currency: stockData.currency })}
+                    </span>
+                    {stockData.postMarketChangePercent != null && (
+                      <span className={`text-xs font-mono ${stockData.postMarketChangePercent >= 0 ? 'text-positive' : 'text-destructive'}`}>
+                        {stockData.postMarketChangePercent >= 0 ? '+' : ''}{formatHebrewNumber(stockData.postMarketChangePercent, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 
