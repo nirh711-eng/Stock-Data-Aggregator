@@ -14,6 +14,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Separator } from "@/components/ui/separator";
+import { DeepAnalysis } from "@/components/DeepAnalysis";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from "recharts";
 
 const POPULAR_TICKERS = ["AAPL", "TSLA", "NVDA", "MSFT"];
@@ -366,6 +368,14 @@ export default function Home() {
 
               </div>
             </div>
+          </div>
+        )}
+
+        {/* Deep Analysis Section */}
+        {activeTicker && stockData && !isLoadingData && (
+          <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-300">
+            <Separator className="my-8" />
+            <DeepAnalysis ticker={activeTicker} />
           </div>
         )}
 

@@ -104,3 +104,66 @@ export const GetStockHistoryResponse = zod.object({
     }),
   ),
 });
+
+/**
+ * Returns a structured multi-layer analysis using hedge fund analyst frameworks — company positioning, competitive moat, value capture, catalysts, and more
+ * @summary Get deep AI analysis based on hedge fund frameworks
+ */
+export const GetStockDeepAnalysisParams = zod.object({
+  ticker: zod.coerce.string(),
+});
+
+export const GetStockDeepAnalysisResponse = zod.object({
+  ticker: zod.string(),
+  companyName: zod.string(),
+  systemUnderstanding: zod.object({
+    valueChain: zod.string(),
+    valueCreation: zod.string(),
+    bottlenecks: zod.string(),
+    macroTrends: zod.string(),
+  }),
+  companyPositioning: zod.object({
+    positionInChain: zod.string(),
+    functionalRole: zod.string(),
+    positionQuality: zod.string(),
+  }),
+  competitiveAdvantage: zod.object({
+    differentiation: zod.string(),
+    moat: zod.string(),
+    competitiveLandscape: zod.string(),
+  }),
+  valueCaptureQuality: zod.object({
+    valueCapture: zod.string(),
+    revenueQuality: zod.string(),
+    warningSigns: zod.string(),
+  }),
+  chainComparison: zod.object({
+    betterAlternatives: zod.string(),
+    relativePositioning: zod.string(),
+  }),
+  forwardLooking: zod.object({
+    catalysts: zod.string(),
+    bullCase: zod.string(),
+    bearCase: zod.string(),
+    baseCase: zod.string(),
+    winConditions: zod.string(),
+  }),
+  conclusion: zod.object({
+    classification: zod.enum(["value_pool", "hype", "tactical", "value_trap"]),
+    classificationLabel: zod.string(),
+    reasoning: zod.string(),
+    actionableIdeas: zod.string(),
+  }),
+  eventAnalysis: zod
+    .object({
+      realityVsNarrative: zod.string(),
+      secondOrderThinking: zod.string(),
+      capitalFlow: zod.string(),
+      winners: zod.string(),
+      losers: zod.string(),
+      materiality: zod.string(),
+      actionableInsights: zod.string(),
+    })
+    .nullish(),
+  generatedAt: zod.string(),
+});

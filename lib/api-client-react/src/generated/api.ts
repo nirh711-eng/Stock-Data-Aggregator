@@ -14,6 +14,7 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  DeepAnalysis,
   ErrorResponse,
   GetStockHistoryParams,
   HealthStatus,
@@ -388,6 +389,96 @@ export function useGetStockHistory<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetStockHistoryQueryOptions(ticker, params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns a structured multi-layer analysis using hedge fund analyst frameworks — company positioning, competitive moat, value capture, catalysts, and more
+ * @summary Get deep AI analysis based on hedge fund frameworks
+ */
+export const getGetStockDeepAnalysisUrl = (ticker: string) => {
+  return `/api/stocks/${ticker}/deep-analysis`;
+};
+
+export const getStockDeepAnalysis = async (
+  ticker: string,
+  options?: RequestInit,
+): Promise<DeepAnalysis> => {
+  return customFetch<DeepAnalysis>(getGetStockDeepAnalysisUrl(ticker), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetStockDeepAnalysisQueryKey = (ticker: string) => {
+  return [`/api/stocks/${ticker}/deep-analysis`] as const;
+};
+
+export const getGetStockDeepAnalysisQueryOptions = <
+  TData = Awaited<ReturnType<typeof getStockDeepAnalysis>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  ticker: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getStockDeepAnalysis>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetStockDeepAnalysisQueryKey(ticker);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getStockDeepAnalysis>>
+  > = ({ signal }) =>
+    getStockDeepAnalysis(ticker, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!ticker,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getStockDeepAnalysis>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetStockDeepAnalysisQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getStockDeepAnalysis>>
+>;
+export type GetStockDeepAnalysisQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get deep AI analysis based on hedge fund frameworks
+ */
+
+export function useGetStockDeepAnalysis<
+  TData = Awaited<ReturnType<typeof getStockDeepAnalysis>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  ticker: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getStockDeepAnalysis>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetStockDeepAnalysisQueryOptions(ticker, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

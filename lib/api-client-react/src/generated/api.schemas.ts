@@ -79,6 +79,85 @@ export interface StockHistory {
   data: PricePoint[];
 }
 
+export interface AnalysisSystemUnderstanding {
+  valueChain: string;
+  valueCreation: string;
+  bottlenecks: string;
+  macroTrends: string;
+}
+
+export interface AnalysisCompanyPositioning {
+  positionInChain: string;
+  functionalRole: string;
+  positionQuality: string;
+}
+
+export interface AnalysisCompetitiveAdvantage {
+  differentiation: string;
+  moat: string;
+  competitiveLandscape: string;
+}
+
+export interface AnalysisValueCapture {
+  valueCapture: string;
+  revenueQuality: string;
+  warningSigns: string;
+}
+
+export interface AnalysisChainComparison {
+  betterAlternatives: string;
+  relativePositioning: string;
+}
+
+export interface AnalysisForwardLooking {
+  catalysts: string;
+  bullCase: string;
+  bearCase: string;
+  baseCase: string;
+  winConditions: string;
+}
+
+export type AnalysisConclusionClassification =
+  (typeof AnalysisConclusionClassification)[keyof typeof AnalysisConclusionClassification];
+
+export const AnalysisConclusionClassification = {
+  value_pool: "value_pool",
+  hype: "hype",
+  tactical: "tactical",
+  value_trap: "value_trap",
+} as const;
+
+export interface AnalysisConclusion {
+  classification: AnalysisConclusionClassification;
+  classificationLabel: string;
+  reasoning: string;
+  actionableIdeas: string;
+}
+
+export interface AnalysisEvent {
+  realityVsNarrative: string;
+  secondOrderThinking: string;
+  capitalFlow: string;
+  winners: string;
+  losers: string;
+  materiality: string;
+  actionableInsights: string;
+}
+
+export interface DeepAnalysis {
+  ticker: string;
+  companyName: string;
+  systemUnderstanding: AnalysisSystemUnderstanding;
+  companyPositioning: AnalysisCompanyPositioning;
+  competitiveAdvantage: AnalysisCompetitiveAdvantage;
+  valueCaptureQuality: AnalysisValueCapture;
+  chainComparison: AnalysisChainComparison;
+  forwardLooking: AnalysisForwardLooking;
+  conclusion: AnalysisConclusion;
+  eventAnalysis?: AnalysisEvent | null;
+  generatedAt: string;
+}
+
 export interface ErrorResponse {
   error: string;
   message: string;
