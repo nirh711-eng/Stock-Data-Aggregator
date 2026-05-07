@@ -158,6 +158,39 @@ export interface DeepAnalysis {
   generatedAt: string;
 }
 
+export interface WatchlistEntry {
+  ticker: string;
+  lastKnownReportDate?: string | null;
+}
+
+export interface WatchlistCheckRequest {
+  watchlist: WatchlistEntry[];
+}
+
+export type WatchlistAlertType =
+  (typeof WatchlistAlertType)[keyof typeof WatchlistAlertType];
+
+export const WatchlistAlertType = {
+  new_report: "new_report",
+  upcoming_earnings: "upcoming_earnings",
+} as const;
+
+export interface WatchlistAlert {
+  ticker: string;
+  companyName: string;
+  type: WatchlistAlertType;
+  message: string;
+  currentReportDate?: string | null;
+  upcomingEarningsDate?: string | null;
+  price?: number | null;
+  priceChangePercent?: number | null;
+}
+
+export interface WatchlistCheckResponse {
+  alerts: WatchlistAlert[];
+  checkedAt: string;
+}
+
 export interface ErrorResponse {
   error: string;
   message: string;

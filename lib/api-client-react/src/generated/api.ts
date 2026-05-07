@@ -5,10 +5,13 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
+  MutationFunction,
   QueryFunction,
   QueryKey,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult,
 } from "@tanstack/react-query";
@@ -21,10 +24,12 @@ import type {
   StockData,
   StockHistory,
   StockSummary,
+  WatchlistCheckRequest,
+  WatchlistCheckResponse,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
-import type { ErrorType } from "../custom-fetch";
+import type { ErrorType, BodyType } from "../custom-fetch";
 
 type AwaitedInput<T> = PromiseLike<T> | T;
 
@@ -396,6 +401,93 @@ export function useGetStockHistory<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Given a list of watched tickers and their last known report dates, returns alerts for any new reports published or upcoming earnings within 7 days
+ * @summary Check watchlist for new earnings reports or upcoming events
+ */
+export const getCheckWatchlistUrl = () => {
+  return `/api/stocks/watchlist/check`;
+};
+
+export const checkWatchlist = async (
+  watchlistCheckRequest: WatchlistCheckRequest,
+  options?: RequestInit,
+): Promise<WatchlistCheckResponse> => {
+  return customFetch<WatchlistCheckResponse>(getCheckWatchlistUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(watchlistCheckRequest),
+  });
+};
+
+export const getCheckWatchlistMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof checkWatchlist>>,
+    TError,
+    { data: BodyType<WatchlistCheckRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof checkWatchlist>>,
+  TError,
+  { data: BodyType<WatchlistCheckRequest> },
+  TContext
+> => {
+  const mutationKey = ["checkWatchlist"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof checkWatchlist>>,
+    { data: BodyType<WatchlistCheckRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return checkWatchlist(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CheckWatchlistMutationResult = NonNullable<
+  Awaited<ReturnType<typeof checkWatchlist>>
+>;
+export type CheckWatchlistMutationBody = BodyType<WatchlistCheckRequest>;
+export type CheckWatchlistMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Check watchlist for new earnings reports or upcoming events
+ */
+export const useCheckWatchlist = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof checkWatchlist>>,
+    TError,
+    { data: BodyType<WatchlistCheckRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof checkWatchlist>>,
+  TError,
+  { data: BodyType<WatchlistCheckRequest> },
+  TContext
+> => {
+  return useMutation(getCheckWatchlistMutationOptions(options));
+};
 
 /**
  * Returns a structured multi-layer analysis using hedge fund analyst frameworks — company positioning, competitive moat, value capture, catalysts, and more

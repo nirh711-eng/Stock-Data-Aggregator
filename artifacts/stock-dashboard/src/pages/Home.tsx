@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Search, TrendingUp, TrendingDown, Clock, Building2, Calendar, FileText, Activity } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Search, TrendingUp, TrendingDown, Clock, Building2, Calendar, FileText, Activity, Star, RefreshCw } from "lucide-react";
 import { 
   useGetStockData, 
   useGetStockSummary, 
@@ -8,7 +8,8 @@ import {
   getGetStockSummaryQueryKey, 
   getGetStockHistoryQueryKey 
 } from "@workspace/api-client-react";
-import type { GetStockHistoryPeriod } from "@workspace/api-client-react/src/generated/api.schemas";
+import type { GetStockHistoryPeriod } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -16,6 +17,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { DeepAnalysis } from "@/components/DeepAnalysis";
+import { NotificationCenter } from "@/components/NotificationCenter";
+import { useWatchlist } from "@/hooks/useWatchlist";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from "recharts";
 
 const POPULAR_TICKERS = ["AAPL", "TSLA", "NVDA", "MSFT"];
@@ -28,8 +31,22 @@ export default function Home() {
   const [searchInput, setSearchInput] = useState("");
   const [activeTicker, setActiveTicker] = useState<string | null>(null);
   const [chartPeriod, setChartPeriod] = useState<GetStockHistoryPeriod>("1mo");
+  const queryClient = useQueryClient();
 
-  const { data: stockData, isLoading: isLoadingData } = useGetStockData(activeTicker || "", {
+  const {
+    alerts,
+    unreadCount,
+    isChecking,
+    isWatched,
+    addToWatchlist,
+    removeFromWatchlist,
+    updateLastKnownDate,
+    markAllRead,
+    clearAlerts,
+    requestNotificationPermission,
+  } = useWatchlist();
+
+  const { data: stockData, isLoading: isLoadingData, isFetching: isFetchingData } = useGetStockData(activeTicker || "", {
     query: {
       enabled: !!activeTicker,
       queryKey: getGetStockDataQueryKey(activeTicker || ""),
@@ -50,6 +67,12 @@ export default function Home() {
     },
   });
 
+  useEffect(() => {
+    if (stockData && activeTicker && isWatched(activeTicker)) {
+      updateLastKnownDate(activeTicker, stockData.quarterlyReport.reportDate ?? null);
+    }
+  }, [stockData, activeTicker, isWatched, updateLastKnownDate]);
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchInput.trim()) {
@@ -61,6 +84,25 @@ export default function Home() {
     setSearchInput(ticker);
     setActiveTicker(ticker);
   };
+
+  const handleRefresh = () => {
+    if (!activeTicker) return;
+    queryClient.invalidateQueries({ queryKey: getGetStockDataQueryKey(activeTicker) });
+    queryClient.invalidateQueries({ queryKey: getGetStockSummaryQueryKey(activeTicker) });
+    queryClient.invalidateQueries({ queryKey: getGetStockHistoryQueryKey(activeTicker, { period: chartPeriod }) });
+  };
+
+  const handleWatchlistToggle = async () => {
+    if (!activeTicker) return;
+    if (isWatched(activeTicker)) {
+      removeFromWatchlist(activeTicker);
+    } else {
+      await requestNotificationPermission();
+      addToWatchlist(activeTicker, stockData?.quarterlyReport.reportDate ?? null);
+    }
+  };
+
+  const watched = activeTicker ? isWatched(activeTicker) : false;
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans p-4 md:p-6 lg:p-8">
@@ -76,18 +118,28 @@ export default function Home() {
             <p className="text-sm text-muted-foreground mt-1">Professional Market Intelligence</p>
           </div>
           
-          <form onSubmit={handleSearch} className="w-full md:w-96 relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-            <Input 
-              value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Enter ticker (e.g. AAPL)..."
-              className="pl-10 bg-card border-card-border font-mono uppercase text-lg"
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <form onSubmit={handleSearch} className="w-full md:w-96 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input 
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                placeholder="Enter ticker (e.g. AAPL)..."
+                className="pl-10 bg-card border-card-border font-mono uppercase text-lg"
+              />
+              <Button type="submit" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 px-3 text-xs" variant="secondary">
+                Search
+              </Button>
+            </form>
+            <NotificationCenter
+              alerts={alerts}
+              unreadCount={unreadCount}
+              isChecking={isChecking}
+              onMarkAllRead={markAllRead}
+              onClearAlerts={clearAlerts}
+              onTickerClick={selectTicker}
             />
-            <Button type="submit" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 px-3 text-xs" variant="secondary">
-              Search
-            </Button>
-          </form>
+          </div>
         </header>
 
         {/* Empty State */}
@@ -143,12 +195,41 @@ export default function Home() {
             {/* Ticker Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
               <div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
                   <h1 className="text-4xl font-bold font-mono tracking-tighter">{stockData.ticker}</h1>
                   <Badge variant="outline" className="font-mono text-xs">{stockData.exchange}</Badge>
                   {stockData.sector && <Badge variant="secondary" className="text-xs">{stockData.sector}</Badge>}
+                  
+                  {/* Watchlist toggle */}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleWatchlistToggle}
+                    title={watched ? "הסר ממעקב" : "הוסף למעקב"}
+                    className={`transition-colors ${watched ? "text-yellow-400 hover:text-yellow-500" : "text-muted-foreground hover:text-yellow-400"}`}
+                  >
+                    <Star className={`w-5 h-5 ${watched ? "fill-yellow-400" : ""}`} />
+                  </Button>
+
+                  {/* Refresh button */}
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={handleRefresh}
+                    title="רענן נתונים"
+                    disabled={isFetchingData}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isFetchingData ? "animate-spin" : ""}`} />
+                  </Button>
                 </div>
                 <h2 className="text-xl text-muted-foreground mt-1">{stockData.companyName}</h2>
+                {watched && (
+                  <p className="text-xs text-yellow-500/80 mt-1 flex items-center gap-1">
+                    <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
+                    עוקב — תישלח התראה בעת פרסום דוח חדש
+                  </p>
+                )}
               </div>
               
               <div className="text-left md:text-right">

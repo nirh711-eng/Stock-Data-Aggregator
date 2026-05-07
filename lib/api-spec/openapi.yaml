@@ -118,6 +118,32 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /stocks/watchlist/check:
+    post:
+      operationId: checkWatchlist
+      tags: [stocks]
+      summary: Check watchlist for new earnings reports or upcoming events
+      description: Given a list of watched tickers and their last known report dates, returns alerts for any new reports published or upcoming earnings within 7 days
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WatchlistCheckRequest"
+      responses:
+        "200":
+          description: Watchlist alerts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WatchlistCheckResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /stocks/{ticker}/deep-analysis:
     get:
       operationId: getStockDeepAnalysis
@@ -489,6 +515,70 @@ components:
         - losers
         - materiality
         - actionableInsights
+
+    WatchlistCheckRequest:
+      type: object
+      properties:
+        watchlist:
+          type: array
+          items:
+            $ref: "#/components/schemas/WatchlistEntry"
+      required:
+        - watchlist
+
+    WatchlistEntry:
+      type: object
+      properties:
+        ticker:
+          type: string
+        lastKnownReportDate:
+          type: string
+          nullable: true
+      required:
+        - ticker
+
+    WatchlistCheckResponse:
+      type: object
+      properties:
+        alerts:
+          type: array
+          items:
+            $ref: "#/components/schemas/WatchlistAlert"
+        checkedAt:
+          type: string
+      required:
+        - alerts
+        - checkedAt
+
+    WatchlistAlert:
+      type: object
+      properties:
+        ticker:
+          type: string
+        companyName:
+          type: string
+        type:
+          type: string
+          enum: ["new_report", "upcoming_earnings"]
+        message:
+          type: string
+        currentReportDate:
+          type: string
+          nullable: true
+        upcomingEarningsDate:
+          type: string
+          nullable: true
+        price:
+          type: number
+          nullable: true
+        priceChangePercent:
+          type: number
+          nullable: true
+      required:
+        - ticker
+        - companyName
+        - type
+        - message
 
     ErrorResponse:
       type: object

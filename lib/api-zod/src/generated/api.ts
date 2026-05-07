@@ -106,6 +106,35 @@ export const GetStockHistoryResponse = zod.object({
 });
 
 /**
+ * Given a list of watched tickers and their last known report dates, returns alerts for any new reports published or upcoming earnings within 7 days
+ * @summary Check watchlist for new earnings reports or upcoming events
+ */
+export const CheckWatchlistBody = zod.object({
+  watchlist: zod.array(
+    zod.object({
+      ticker: zod.string(),
+      lastKnownReportDate: zod.string().nullish(),
+    }),
+  ),
+});
+
+export const CheckWatchlistResponse = zod.object({
+  alerts: zod.array(
+    zod.object({
+      ticker: zod.string(),
+      companyName: zod.string(),
+      type: zod.enum(["new_report", "upcoming_earnings"]),
+      message: zod.string(),
+      currentReportDate: zod.string().nullish(),
+      upcomingEarningsDate: zod.string().nullish(),
+      price: zod.number().nullish(),
+      priceChangePercent: zod.number().nullish(),
+    }),
+  ),
+  checkedAt: zod.string(),
+});
+
+/**
  * Returns a structured multi-layer analysis using hedge fund analyst frameworks — company positioning, competitive moat, value capture, catalysts, and more
  * @summary Get deep AI analysis based on hedge fund frameworks
  */

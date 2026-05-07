@@ -239,7 +239,8 @@ router.get("/stocks/:ticker/history", async (req, res) => {
       interval: config.interval,
     });
 
-    const data = historical.map((item) => ({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = historical.map((item: any) => ({
       date: item.date instanceof Date ? item.date.toISOString().split("T")[0] : String(item.date),
       open: item.open ?? 0,
       high: item.high ?? 0,
