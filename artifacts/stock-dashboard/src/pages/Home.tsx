@@ -3,12 +3,9 @@ import { Search, TrendingUp, TrendingDown, Clock, Building2, Calendar, FileText,
 import { 
   useGetStockData, 
   useGetStockSummary, 
-  useGetStockHistory, 
   getGetStockDataQueryKey, 
-  getGetStockSummaryQueryKey, 
-  getGetStockHistoryQueryKey 
+  getGetStockSummaryQueryKey,
 } from "@workspace/api-client-react";
-import type { GetStockHistoryPeriod } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -18,8 +15,8 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { DeepAnalysis } from "@/components/DeepAnalysis";
 import { NotificationCenter } from "@/components/NotificationCenter";
+import { TradingViewChart } from "@/components/TradingViewChart";
 import { useWatchlist } from "@/hooks/useWatchlist";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Area, AreaChart } from "recharts";
 
 const POPULAR_TICKERS = ["AAPL", "TSLA", "NVDA", "MSFT"];
 
@@ -30,7 +27,6 @@ const formatHebrewNumber = (num: number, options?: Intl.NumberFormatOptions) => 
 export default function Home() {
   const [searchInput, setSearchInput] = useState("");
   const [activeTicker, setActiveTicker] = useState<string | null>(null);
-  const [chartPeriod, setChartPeriod] = useState<GetStockHistoryPeriod>("1mo");
   const queryClient = useQueryClient();
 
   const {
@@ -60,13 +56,6 @@ export default function Home() {
     },
   });
 
-  const { data: stockHistory, isLoading: isLoadingHistory } = useGetStockHistory(activeTicker || "", { period: chartPeriod }, {
-    query: {
-      enabled: !!activeTicker,
-      queryKey: getGetStockHistoryQueryKey(activeTicker || "", { period: chartPeriod }),
-    },
-  });
-
   useEffect(() => {
     if (stockData && activeTicker && isWatched(activeTicker)) {
       updateLastKnownDate(activeTicker, stockData.quarterlyReport.reportDate ?? null);
@@ -89,7 +78,6 @@ export default function Home() {
     if (!activeTicker) return;
     queryClient.invalidateQueries({ queryKey: getGetStockDataQueryKey(activeTicker) });
     queryClient.invalidateQueries({ queryKey: getGetStockSummaryQueryKey(activeTicker) });
-    queryClient.invalidateQueries({ queryKey: getGetStockHistoryQueryKey(activeTicker, { period: chartPeriod }) });
   };
 
   const handleWatchlistToggle = async () => {
@@ -309,74 +297,17 @@ export default function Home() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Main Column */}
               <div className="lg:col-span-2 space-y-6">
-                {/* Chart Card */}
-                <Card className="border-card-border bg-card shadow-md">
+                {/* TradingView Chart */}
+                <Card className="border-card-border bg-card shadow-md overflow-hidden">
                   <CardHeader className="flex flex-row items-center justify-between pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground">Price History</CardTitle>
-                    <div className="flex bg-muted p-1 rounded-md">
-                      {(["1d", "5d", "1mo", "3mo", "6mo", "1y"] as const).map((p) => (
-                        <button
-                          key={p}
-                          onClick={() => setChartPeriod(p)}
-                          className={`px-3 py-1 text-xs font-medium rounded-sm transition-colors ${chartPeriod === p ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                        >
-                          {p.toUpperCase()}
-                        </button>
-                      ))}
-                    </div>
+                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                      <Activity className="w-4 h-4" />
+                      Live Chart — TradingView
+                    </CardTitle>
+                    <span className="text-[10px] text-muted-foreground/50 font-mono">Powered by TradingView</span>
                   </CardHeader>
-                  <CardContent>
-                    <div className="h-[400px] w-full mt-4">
-                      {isLoadingHistory ? (
-                        <div className="w-full h-full flex items-center justify-center text-muted-foreground text-sm">Loading chart data...</div>
-                      ) : stockHistory && stockHistory.data.length > 0 ? (
-                        <ResponsiveContainer width="100%" height="100%">
-                          <AreaChart data={stockHistory.data} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
-                            <defs>
-                              <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
-                                <stop offset="5%" stopColor={stockData.priceChange >= 0 ? 'hsl(var(--positive))' : 'hsl(var(--destructive))'} stopOpacity={0.3}/>
-                                <stop offset="95%" stopColor={stockData.priceChange >= 0 ? 'hsl(var(--positive))' : 'hsl(var(--destructive))'} stopOpacity={0}/>
-                              </linearGradient>
-                            </defs>
-                            <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                            <XAxis 
-                              dataKey="date" 
-                              tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))' }} 
-                              axisLine={false} 
-                              tickLine={false}
-                              tickFormatter={(val) => {
-                                const date = new Date(val);
-                                return chartPeriod === '1d' ? date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : date.toLocaleDateString([], {month: 'short', day: 'numeric'});
-                              }}
-                            />
-                            <YAxis 
-                              domain={['auto', 'auto']} 
-                              tick={{ fontSize: 10, fill: 'hsl(var(--muted-foreground))', fontFamily: 'monospace' }} 
-                              axisLine={false} 
-                              tickLine={false}
-                              tickFormatter={(val) => formatHebrewNumber(val)}
-                            />
-                            <Tooltip 
-                              contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))', borderRadius: '8px' }}
-                              itemStyle={{ color: 'hsl(var(--foreground))', fontFamily: 'monospace' }}
-                              labelStyle={{ color: 'hsl(var(--muted-foreground))', marginBottom: '4px' }}
-                              formatter={(value: number) => [formatHebrewNumber(value, { style: 'currency', currency: stockData.currency }), 'Price']}
-                              labelFormatter={(label) => new Date(label).toLocaleString()}
-                            />
-                            <Area 
-                              type="monotone" 
-                              dataKey="close" 
-                              stroke={stockData.priceChange >= 0 ? 'hsl(var(--positive))' : 'hsl(var(--destructive))'} 
-                              strokeWidth={2}
-                              fillOpacity={1} 
-                              fill="url(#colorPrice)" 
-                            />
-                          </AreaChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-muted-foreground text-sm">No data available for this period.</div>
-                      )}
-                    </div>
+                  <CardContent className="p-0">
+                    <TradingViewChart ticker={activeTicker} height={500} />
                   </CardContent>
                 </Card>
 
