@@ -2,6 +2,7 @@ import { Router } from "express";
 import yahooFinanceMod from "yahoo-finance2";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { GetStockDeepAnalysisParams } from "@workspace/api-zod";
+import { jsonrepair } from "jsonrepair";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const YahooFinance = yahooFinanceMod as any;
@@ -22,13 +23,6 @@ function pct(value: number | null | undefined): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function extractVal(series: any[], key: string, index = 0): number | null {
-  if (!Array.isArray(series) || series.length <= index) return null;
-  const entry = series[series.length - 1 - index];
-  return entry?.[key] ?? null;
-}
-
 router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
   const parse = GetStockDeepAnalysisParams.safeParse(req.params);
   if (!parse.success) {
@@ -40,11 +34,7 @@ router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
   const upperTicker = ticker.toUpperCase();
 
   try {
-    const oneYearAgo = new Date();
-    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
-    const period1 = oneYearAgo.toISOString().split("T")[0];
-
-    const [quoteResult, qsResult, ftsResult] = await Promise.allSettled([
+    const [quoteResult, qsResult] = await Promise.allSettled([
       yahooFinance.quote(upperTicker),
       yahooFinance.quoteSummary(upperTicker, {
         modules: [
@@ -53,17 +43,9 @@ router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
           "defaultKeyStatistics",
           "calendarEvents",
           "earningsTrend",
-        ],
-      }),
-      yahooFinance.fundamentalsTimeSeries(upperTicker, {
-        period1,
-        type: [
-          "quarterlyTotalRevenue",
-          "quarterlyNetIncome",
-          "quarterlyGrossProfit",
-          "quarterlyOperatingIncome",
-          "quarterlyEpsActual",
-          "quarterlyFreeCashFlow",
+          "earnings",
+          "earningsHistory",
+          "incomeStatementHistory",
         ],
       }),
     ]);
@@ -75,38 +57,53 @@ router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
 
     const q = quoteResult.value;
     const qs = qsResult.status === "fulfilled" ? qsResult.value : null;
-    const fts = ftsResult.status === "fulfilled" ? ftsResult.value : null;
 
     const profile = qs?.assetProfile;
     const financials = qs?.financialData;
     const keyStats = qs?.defaultKeyStatistics;
 
-    // Extract quarterly data from fundamentalsTimeSeries (sorted oldest→newest)
+    // Primary source: earnings.financialsChart.quarterly (last 4 quarters of revenue + earnings)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ftsSeries: any[] = Array.isArray(fts) ? fts : [];
+    const quarterlyFinancials: any[] = qs?.earnings?.financialsChart?.quarterly ?? [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const quarterlyEps: any[] = qs?.earnings?.earningsChart?.quarterly ?? [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const earningsHistory: any[] = qs?.earningsHistory?.history ?? [];
+    // Fallback: incomeStatementHistory (annual, less granular)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const incomeHistory: any[] = qs?.incomeStatementHistory?.incomeStatementHistory ?? [];
 
-    const latestRev = extractVal(ftsSeries, "quarterlyTotalRevenue");
-    const prevRev = extractVal(ftsSeries, "quarterlyTotalRevenue", 1);
-    const latestNetIncome = extractVal(ftsSeries, "quarterlyNetIncome");
-    const prevNetIncome = extractVal(ftsSeries, "quarterlyNetIncome", 1);
-    const latestGrossProfit = extractVal(ftsSeries, "quarterlyGrossProfit");
-    const latestOperatingIncome = extractVal(ftsSeries, "quarterlyOperatingIncome");
-    const latestEps = extractVal(ftsSeries, "quarterlyEpsActual");
-    const latestFCF = extractVal(ftsSeries, "quarterlyFreeCashFlow");
+    // Build quarterly context from earnings module
+    const latestQ = quarterlyFinancials[quarterlyFinancials.length - 1];
+    const prevQ = quarterlyFinancials[quarterlyFinancials.length - 2];
+    const latestEpsQ = quarterlyEps[quarterlyEps.length - 1];
+    const latestEpsHistory = earningsHistory[earningsHistory.length - 1];
 
-    const latestQuarterDate = ftsSeries.length > 0
-      ? ftsSeries[ftsSeries.length - 1]?.date ?? null
-      : null;
+    // Fallback to incomeStatementHistory
+    const latestIncome = incomeHistory[0];
+    const prevIncome = incomeHistory[1];
+
+    const latestRev = latestQ?.revenue ?? latestIncome?.totalRevenue ?? null;
+    const prevRev = prevQ?.revenue ?? prevIncome?.totalRevenue ?? null;
+    const latestEarnings = latestQ?.earnings ?? latestIncome?.netIncome ?? null;
+    const latestEpsVal = latestEpsQ?.actual ?? latestEpsHistory?.epsActual ?? q.epsTrailingTwelveMonths ?? null;
+    const epsEstimate = latestEpsQ?.estimate ?? latestEpsHistory?.epsEstimate ?? null;
+    const epsSurprise = latestEpsHistory?.surprisePercent ?? null;
+    const latestPeriod = latestQ?.date ?? latestEpsQ?.date ?? (latestIncome?.endDate ? new Date(latestIncome.endDate).toLocaleDateString("he-IL") : null);
 
     const revGrowthQoQ = latestRev && prevRev
       ? ((latestRev / prevRev - 1) * 100).toFixed(1) + "%"
       : "N/A";
 
-    const netIncomeGrowthQoQ = latestNetIncome && prevNetIncome
-      ? ((latestNetIncome / prevNetIncome - 1) * 100).toFixed(1) + "%"
-      : "N/A";
-
     const companyName = q.longName ?? q.shortName ?? upperTicker;
+
+    // Build all 4 quarters summary if available
+    const quartersText = quarterlyFinancials.length > 0
+      ? quarterlyFinancials.map(qf => {
+        const qeps = quarterlyEps.find((e: { date: string }) => e.date === qf.date);
+        return `  ${qf.date}: הכנסות ${formatNum(qf.revenue)}, רווח ${formatNum(qf.earnings)}, EPS בפועל ${qeps?.actual?.toFixed(2) ?? "N/A"} (אומדן ${qeps?.estimate?.toFixed(2) ?? "N/A"})`;
+      }).join("\n")
+      : "  אין נתוני רבעונים זמינים";
 
     const dataContext = `
 חברה: ${companyName} (${upperTicker})
@@ -137,24 +134,25 @@ ROA: ${pct(financials?.returnOnAssets)}
 מזומן: ${formatNum(financials?.totalCash)} | חוב: ${formatNum(financials?.totalDebt)}
 יחס חוב/הון עצמי: ${financials?.debtToEquity?.toFixed(2) ?? "N/A"}
 
---- דוח רבעוני אחרון (${latestQuarterDate ? new Date(latestQuarterDate).toLocaleDateString("he-IL") : "רבעון אחרון"}) ---
+--- ביצועים רבעוניים (4 רבעונים אחרונים) ---
+${quartersText}
+
+--- רבעון אחרון (${latestPeriod ?? "N/A"}) ---
 הכנסות: ${formatNum(latestRev)}
-רווח גולמי: ${formatNum(latestGrossProfit)}
-הכנסות תפעוליות: ${formatNum(latestOperatingIncome)}
-רווח נקי: ${formatNum(latestNetIncome)}
-EPS: ${latestEps?.toFixed(2) ?? "N/A"}
-Free Cash Flow: ${formatNum(latestFCF)}
+רווח נקי: ${formatNum(latestEarnings)}
+EPS בפועל: ${latestEpsVal?.toFixed(2) ?? "N/A"} | EPS אומדן: ${epsEstimate?.toFixed(2) ?? "N/A"}
+הפתעת EPS: ${epsSurprise != null ? (epsSurprise * 100).toFixed(1) + "%" : "N/A"}
 שינוי הכנסות QoQ: ${revGrowthQoQ}
-שינוי רווח נקי QoQ: ${netIncomeGrowthQoQ}
 
 --- תיאור עסקי ---
 ${profile?.longBusinessSummary ? profile.longBusinessSummary.slice(0, 800) : "N/A"}
 `.trim();
 
     const systemPrompt = `אתה אנליסט בכיר במחלקת ניתוח עומק (Deep Research) של קרן גידור גלובלית מובילה, עם התמחות בזיהוי מוקדם של מקומות שבהם ערך כלכלי אמיתי נוצר ונלכד.
-המטרה שלך היא לא "לנתח חברה" - אלא להבין את המערכת השלמה שבה היא פועלת, ולמקם אותה בתוך זרימת הערך.
-כתוב בעברית. חד, ישיר, בלי מילים מיותרות. חשיבה של כסף — לא של כותרות. כל סעיף חייב לענות על: "איפה הערך זז, ולמה עכשיו".
-החזר אך ורק JSON תקני, ללא markdown, ללא טקסט מחוץ ל-JSON.`;
+המטרה שלך היא לא לנתח חברה - אלא להבין את המערכת השלמה שבה היא פועלת, ולמקם אותה בתוך זרימת הערך.
+כתוב בעברית. חד, ישיר, בלי מילים מיותרות. חשיבה של כסף - לא של כותרות. כל סעיף חייב לענות על: איפה הערך זז, ולמה עכשיו.
+CRITICAL: החזר אך ורק JSON תקני. ללא markdown. ללא טקסט מחוץ ל-JSON.
+CRITICAL: אל תשתמש לעולם בגרשיים כפולים (") בתוך ערכי הטקסט - השתמש בגרש בודד (') או בגרשיים עבריים (״) במקום. לדוגמה: כתוב דו״חות ולא דו"חות.`;
 
     const userPrompt = `נתח את החברה הבאה לפי המבנה המדויק:
 
@@ -201,13 +199,13 @@ ${dataContext}
     "actionableIdeas": "רעיונות לפעולה: Long/Short/Pair/Watchlist - עם היגיון ברור של למה עכשיו"
   },
   "eventAnalysis": {
-    "realityVsNarrative": "מה בפועל קרה בדוח/ידיעה האחרונה? עובדות יבשות מול הסיפור שמוכרים בכותרת. השתמש בנתוני הדוח הרבעוני שסופקו.",
-    "secondOrderThinking": "מה ההשלכות הלא-מיידיות שרוב השוק מפספס מהדוח האחרון?",
+    "realityVsNarrative": "מה בפועל קרה בדוח הרבעוני האחרון? נתח את מספרי ההכנסות, הרווח והפתעת ה-EPS מול הציפיות. עובדות יבשות מול הסיפור שמוכרים בכותרת.",
+    "secondOrderThinking": "מה ההשלכות הלא-מיידיות שרוב השוק מפספס מהדוח האחרון? מה האנליסטים לא רואים?",
     "capitalFlow": "לאן כסף עשוי לזרום בעקבות הדוח? (סקטורים/תתי-סקטורים/סוגי נכסים)",
-    "winners": "אילו חברות או תעשיות עשויות להרוויח מהמצב הנוכחי?",
-    "losers": "מי צפוי להיפגע? איפה החולשה נחשפת?",
-    "materiality": "האם הנתונים האחרונים מייצגים רעש קצר טווח או שינוי מגמה אמיתי?",
-    "actionableInsights": "רעיונות מסחר קונקרטיים: Long/Short/Pair/Watchlist עם תזמון"
+    "winners": "אילו חברות או תעשיות עשויות להרוויח מהמצב הנוכחי של ${companyName}?",
+    "losers": "מי צפוי להיפגע? איפה החולשה נחשפת בעקבות הדוח?",
+    "materiality": "האם הדוח מייצג רעש קצר טווח או שינוי מגמה אמיתי? מה ההשפעה על החברה/סקטור/שוק?",
+    "actionableInsights": "רעיונות מסחר קונקרטיים מהדוח: Long/Short/Pair/Watchlist עם תזמון ונימוק"
   }
 }`;
 
@@ -222,18 +220,30 @@ ${dataContext}
 
     const raw = response.choices[0]?.message?.content ?? "{}";
 
-    let parsed: Record<string, unknown>;
-    try {
-      const jsonMatch = raw.match(/\{[\s\S]*\}/);
-      parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
-    } catch {
+    function robustParseJson(str: string): Record<string, unknown> | null {
+      // Attempt 1: direct parse
+      try { return JSON.parse(str); } catch { /* continue */ }
+
+      // Attempt 2: jsonrepair — fixes structural issues (unclosed braces, dotted keys, etc.)
+      try { return JSON.parse(jsonrepair(str)); } catch { /* continue */ }
+
+      // Attempt 3: extract JSON block and repair
+      const extracted = str.match(/\{[\s\S]*\}/)?.[0];
+      if (!extracted) return null;
+      try { return JSON.parse(jsonrepair(extracted)); } catch { /* continue */ }
+
+      return null;
+    }
+
+    const parsed = robustParseJson(raw);
+    if (!parsed) {
       req.log?.warn({ raw }, "Failed to parse AI JSON response");
       res.status(500).json({ error: "Parse error", message: "Failed to parse AI analysis" });
       return;
     }
 
-    const defaultEventAnalysis = {
-      realityVsNarrative: "אין נתוני דוח זמינים",
+    const fallbackEvent = {
+      realityVsNarrative: "נתוני דוח רבעוני מוגבלים — ניתוח מבוסס על מדדי TTM",
       secondOrderThinking: "N/A",
       capitalFlow: "N/A",
       winners: "N/A",
@@ -252,7 +262,7 @@ ${dataContext}
       chainComparison: parsed.chainComparison ?? {},
       forwardLooking: parsed.forwardLooking ?? {},
       conclusion: parsed.conclusion ?? {},
-      eventAnalysis: parsed.eventAnalysis ?? defaultEventAnalysis,
+      eventAnalysis: parsed.eventAnalysis ?? fallbackEvent,
       generatedAt: new Date().toISOString(),
     });
   } catch (err) {
