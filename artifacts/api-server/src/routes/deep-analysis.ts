@@ -22,6 +22,13 @@ function pct(value: number | null | undefined): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractVal(series: any[], key: string, index = 0): number | null {
+  if (!Array.isArray(series) || series.length <= index) return null;
+  const entry = series[series.length - 1 - index];
+  return entry?.[key] ?? null;
+}
+
 router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
   const parse = GetStockDeepAnalysisParams.safeParse(req.params);
   if (!parse.success) {
@@ -33,7 +40,11 @@ router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
   const upperTicker = ticker.toUpperCase();
 
   try {
-    const [quoteResult, qsResult] = await Promise.allSettled([
+    const oneYearAgo = new Date();
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+    const period1 = oneYearAgo.toISOString().split("T")[0];
+
+    const [quoteResult, qsResult, ftsResult] = await Promise.allSettled([
       yahooFinance.quote(upperTicker),
       yahooFinance.quoteSummary(upperTicker, {
         modules: [
@@ -41,10 +52,18 @@ router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
           "financialData",
           "defaultKeyStatistics",
           "calendarEvents",
-          "incomeStatementHistory",
-          "cashflowStatementHistory",
-          "balanceSheetHistory",
           "earningsTrend",
+        ],
+      }),
+      yahooFinance.fundamentalsTimeSeries(upperTicker, {
+        period1,
+        type: [
+          "quarterlyTotalRevenue",
+          "quarterlyNetIncome",
+          "quarterlyGrossProfit",
+          "quarterlyOperatingIncome",
+          "quarterlyEpsActual",
+          "quarterlyFreeCashFlow",
         ],
       }),
     ]);
@@ -56,12 +75,36 @@ router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
 
     const q = quoteResult.value;
     const qs = qsResult.status === "fulfilled" ? qsResult.value : null;
+    const fts = ftsResult.status === "fulfilled" ? ftsResult.value : null;
+
     const profile = qs?.assetProfile;
     const financials = qs?.financialData;
     const keyStats = qs?.defaultKeyStatistics;
-    const incomeHistory = qs?.incomeStatementHistory?.incomeStatementHistory ?? [];
-    const latestIncome = incomeHistory[0];
-    const prevIncome = incomeHistory[1];
+
+    // Extract quarterly data from fundamentalsTimeSeries (sorted oldest→newest)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ftsSeries: any[] = Array.isArray(fts) ? fts : [];
+
+    const latestRev = extractVal(ftsSeries, "quarterlyTotalRevenue");
+    const prevRev = extractVal(ftsSeries, "quarterlyTotalRevenue", 1);
+    const latestNetIncome = extractVal(ftsSeries, "quarterlyNetIncome");
+    const prevNetIncome = extractVal(ftsSeries, "quarterlyNetIncome", 1);
+    const latestGrossProfit = extractVal(ftsSeries, "quarterlyGrossProfit");
+    const latestOperatingIncome = extractVal(ftsSeries, "quarterlyOperatingIncome");
+    const latestEps = extractVal(ftsSeries, "quarterlyEpsActual");
+    const latestFCF = extractVal(ftsSeries, "quarterlyFreeCashFlow");
+
+    const latestQuarterDate = ftsSeries.length > 0
+      ? ftsSeries[ftsSeries.length - 1]?.date ?? null
+      : null;
+
+    const revGrowthQoQ = latestRev && prevRev
+      ? ((latestRev / prevRev - 1) * 100).toFixed(1) + "%"
+      : "N/A";
+
+    const netIncomeGrowthQoQ = latestNetIncome && prevNetIncome
+      ? ((latestNetIncome / prevNetIncome - 1) * 100).toFixed(1) + "%"
+      : "N/A";
 
     const companyName = q.longName ?? q.shortName ?? upperTicker;
 
@@ -80,7 +123,7 @@ EPS (TTM): ${q.epsTrailingTwelveMonths?.toFixed(2) ?? "N/A"} | EPS עתידי: $
 Beta: ${keyStats?.beta?.toFixed(2) ?? "N/A"}
 52W High: ${q.fiftyTwoWeekHigh?.toFixed(2) ?? "N/A"} | 52W Low: ${q.fiftyTwoWeekLow?.toFixed(2) ?? "N/A"}
 
---- נתונים פיננסיים ---
+--- נתונים פיננסיים (TTM) ---
 הכנסות (TTM): ${formatNum(financials?.totalRevenue)}
 EBITDA: ${formatNum(financials?.ebitda)}
 שולי רווח גולמי: ${pct(financials?.grossMargins)}
@@ -94,18 +137,18 @@ ROA: ${pct(financials?.returnOnAssets)}
 מזומן: ${formatNum(financials?.totalCash)} | חוב: ${formatNum(financials?.totalDebt)}
 יחס חוב/הון עצמי: ${financials?.debtToEquity?.toFixed(2) ?? "N/A"}
 
---- דוח אחרון (${latestIncome ? new Date(latestIncome.endDate).toLocaleDateString("he-IL") : "N/A"}) ---
-הכנסות: ${formatNum(latestIncome?.totalRevenue)}
-רווח גולמי: ${formatNum(latestIncome?.grossProfit)}
-EBIT: ${formatNum(latestIncome?.ebit)}
-רווח נקי: ${formatNum(latestIncome?.netIncome)}
-${prevIncome ? `שינוי הכנסות QoQ: ${latestIncome?.totalRevenue && prevIncome?.totalRevenue ? ((latestIncome.totalRevenue / prevIncome.totalRevenue - 1) * 100).toFixed(1) + "%" : "N/A"}` : ""}
+--- דוח רבעוני אחרון (${latestQuarterDate ? new Date(latestQuarterDate).toLocaleDateString("he-IL") : "רבעון אחרון"}) ---
+הכנסות: ${formatNum(latestRev)}
+רווח גולמי: ${formatNum(latestGrossProfit)}
+הכנסות תפעוליות: ${formatNum(latestOperatingIncome)}
+רווח נקי: ${formatNum(latestNetIncome)}
+EPS: ${latestEps?.toFixed(2) ?? "N/A"}
+Free Cash Flow: ${formatNum(latestFCF)}
+שינוי הכנסות QoQ: ${revGrowthQoQ}
+שינוי רווח נקי QoQ: ${netIncomeGrowthQoQ}
 
 --- תיאור עסקי ---
 ${profile?.longBusinessSummary ? profile.longBusinessSummary.slice(0, 800) : "N/A"}
-
---- מתחרות ידועות ---
-${Array.isArray(profile?.companyOfficers) ? "" : ""}${profile?.industry ?? "אין מידע על מתחרות"}
 `.trim();
 
     const systemPrompt = `אתה אנליסט בכיר במחלקת ניתוח עומק (Deep Research) של קרן גידור גלובלית מובילה, עם התמחות בזיהוי מוקדם של מקומות שבהם ערך כלכלי אמיתי נוצר ונלכד.
@@ -117,7 +160,7 @@ ${Array.isArray(profile?.companyOfficers) ? "" : ""}${profile?.industry ?? "אי
 
 ${dataContext}
 
-החזר JSON עם המבנה הבא בדיוק:
+החזר JSON עם המבנה הבא בדיוק (כל השדות חובה, אל תשמיט אף שדה):
 {
   "systemUnderstanding": {
     "valueChain": "פירוק שרשרת הערך של התעשייה - Upstream → Midstream → Downstream. איפה באמת נוצר הערך הכלכלי? מי לוכד מרווחים גבוהים?",
@@ -158,13 +201,13 @@ ${dataContext}
     "actionableIdeas": "רעיונות לפעולה: Long/Short/Pair/Watchlist - עם היגיון ברור של למה עכשיו"
   },
   "eventAnalysis": {
-    "realityVsNarrative": "מה בפועל קרה בדוח/ידיעה האחרונה? עובדות יבשות מול הסיפור שמוכרים בכותרת",
+    "realityVsNarrative": "מה בפועל קרה בדוח/ידיעה האחרונה? עובדות יבשות מול הסיפור שמוכרים בכותרת. השתמש בנתוני הדוח הרבעוני שסופקו.",
     "secondOrderThinking": "מה ההשלכות הלא-מיידיות שרוב השוק מפספס מהדוח האחרון?",
     "capitalFlow": "לאן כסף עשוי לזרום בעקבות הדוח? (סקטורים/תתי-סקטורים/סוגי נכסים)",
-    "winners": "אילו חברות או תעשיות עשויות להרוויח מהמצב של ${companyName}?",
-    "losers": "מי צפוי להיפגע? איפה החולשה נחשפת בעקבות הדוח?",
-    "materiality": "האם הדוח האחרון מייצג רעש קצר טווח או שינוי מגמה אמיתי? השפעה על החברה/סקטור/שוק",
-    "actionableInsights": "רעיונות מסחר קונקרטיים מהדוח: Long/Short/Pair/Watchlist עם תזמון"
+    "winners": "אילו חברות או תעשיות עשויות להרוויח מהמצב הנוכחי?",
+    "losers": "מי צפוי להיפגע? איפה החולשה נחשפת?",
+    "materiality": "האם הנתונים האחרונים מייצגים רעש קצר טווח או שינוי מגמה אמיתי?",
+    "actionableInsights": "רעיונות מסחר קונקרטיים: Long/Short/Pair/Watchlist עם תזמון"
   }
 }`;
 
@@ -189,6 +232,16 @@ ${dataContext}
       return;
     }
 
+    const defaultEventAnalysis = {
+      realityVsNarrative: "אין נתוני דוח זמינים",
+      secondOrderThinking: "N/A",
+      capitalFlow: "N/A",
+      winners: "N/A",
+      losers: "N/A",
+      materiality: "N/A",
+      actionableInsights: "N/A",
+    };
+
     res.json({
       ticker: upperTicker,
       companyName,
@@ -199,7 +252,7 @@ ${dataContext}
       chainComparison: parsed.chainComparison ?? {},
       forwardLooking: parsed.forwardLooking ?? {},
       conclusion: parsed.conclusion ?? {},
-      eventAnalysis: parsed.eventAnalysis ?? null,
+      eventAnalysis: parsed.eventAnalysis ?? defaultEventAnalysis,
       generatedAt: new Date().toISOString(),
     });
   } catch (err) {

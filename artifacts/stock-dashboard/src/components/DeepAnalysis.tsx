@@ -268,35 +268,33 @@ export function DeepAnalysis({ ticker }: DeepAnalysisProps) {
           </CardContent>
         </Card>
 
-        {/* Event Analysis (Optional) */}
-        {data.eventAnalysis && (
-          <Card className="border-t-[3px] border-t-violet-500 bg-card/50 shadow-md">
-            <CardHeader className="pb-3 border-b border-border/50 bg-muted/20">
-              <CardTitle className="text-lg flex items-center gap-2 text-violet-400">
-                <AlertTriangle className="w-5 h-5" />
-                <span>ניתוח האירוע האחרון</span>
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-4 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2 divide-y divide-border/30 md:divide-y-0">
-              <div className="space-y-2 divide-y divide-border/30">
-                <Field label="Reality vs Narrative" content={data.eventAnalysis.realityVsNarrative} />
-                <Field label="Second-Order Thinking" content={data.eventAnalysis.secondOrderThinking} />
-                <Field label="זרימת הון פוטנציאלית" content={data.eventAnalysis.capitalFlow} />
-                <Field label="רמת מהותיות" content={data.eventAnalysis.materiality} />
-              </div>
-              <div className="space-y-2 divide-y divide-border/30 md:border-r md:border-border/30 md:pr-8">
-                <Field label="מרוויחים פוטנציאליים" content={data.eventAnalysis.winners} />
-                <Field label="נפגעים פוטנציאליים" content={data.eventAnalysis.losers} />
-                <div className="pt-3">
-                  <div className="text-xs font-medium text-violet-400 mb-1.5 uppercase tracking-wide">תרגום לפעולה</div>
-                  <div className="text-sm leading-relaxed text-foreground font-medium p-3 bg-violet-500/10 rounded-md border border-violet-500/20">
-                    {data.eventAnalysis.actionableInsights}
-                  </div>
+        {/* Event Analysis — always shown */}
+        <Card className="border-t-[3px] border-t-violet-500 bg-card/50 shadow-md">
+          <CardHeader className="pb-3 border-b border-border/50 bg-muted/20">
+            <CardTitle className="text-lg flex items-center gap-2 text-violet-400">
+              <AlertTriangle className="w-5 h-5" />
+              <span>ניתוח הדוח הרבעוני האחרון</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2 divide-y divide-border/30 md:divide-y-0">
+            <div className="space-y-2 divide-y divide-border/30">
+              <Field label="Reality vs Narrative — מה באמת קרה" content={data.eventAnalysis?.realityVsNarrative} />
+              <Field label="Second-Order Thinking — מה השוק מפספס" content={data.eventAnalysis?.secondOrderThinking} />
+              <Field label="זרימת הון פוטנציאלית" content={data.eventAnalysis?.capitalFlow} />
+              <Field label="רמת מהותיות — רעש או מגמה?" content={data.eventAnalysis?.materiality} />
+            </div>
+            <div className="space-y-2 divide-y divide-border/30 md:border-r md:border-border/30 md:pr-8">
+              <Field label="מרוויחים פוטנציאליים" content={data.eventAnalysis?.winners} />
+              <Field label="נפגעים פוטנציאליים" content={data.eventAnalysis?.losers} />
+              <div className="pt-3">
+                <div className="text-xs font-medium text-violet-400 mb-1.5 uppercase tracking-wide">תרגום לפעולה</div>
+                <div className="text-sm leading-relaxed text-foreground font-medium p-3 bg-violet-500/10 rounded-md border border-violet-500/20">
+                  {data.eventAnalysis?.actionableInsights}
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        )}
+            </div>
+          </CardContent>
+        </Card>
 
         {/* 7. Conclusion */}
         <Card className="border-[2px] border-primary/30 bg-card shadow-lg relative overflow-hidden mt-12">
