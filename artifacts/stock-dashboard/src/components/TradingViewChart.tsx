@@ -12,53 +12,62 @@ interface TradingViewChartProps {
   height?: number;
 }
 
-export function TradingViewChart({ ticker, height = 450 }: TradingViewChartProps) {
+export function TradingViewChart({ ticker, height = 650 }: TradingViewChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const widgetRef = useRef<unknown>(null);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     container.innerHTML = "";
-    widgetRef.current = null;
 
-    const uniqueId = `tv_widget_${ticker}_${Date.now()}`;
+    const uniqueId = `tv_${ticker.replace(/[^a-zA-Z0-9]/g, "_")}_${Date.now()}`;
     const innerDiv = document.createElement("div");
     innerDiv.id = uniqueId;
+    innerDiv.style.height = "100%";
+    innerDiv.style.width = "100%";
     container.appendChild(innerDiv);
 
     const initWidget = () => {
       if (!window.TradingView || !document.getElementById(uniqueId)) return;
-      widgetRef.current = new window.TradingView.widget({
+      new window.TradingView.widget({
         autosize: true,
         symbol: ticker,
         interval: "D",
-        timezone: "Etc/UTC",
+        timezone: "America/New_York",
         theme: "dark",
         style: "1",
         locale: "en",
-        backgroundColor: "rgba(10, 10, 15, 1)",
-        gridColor: "rgba(40, 40, 60, 0.8)",
+        backgroundColor: "rgba(9, 9, 11, 1)",
+        gridColor: "rgba(255, 255, 255, 0.04)",
         enable_publishing: false,
-        allow_symbol_change: false,
-        save_image: false,
+        allow_symbol_change: true,
+        save_image: true,
         hide_side_toolbar: false,
+        hide_top_toolbar: false,
+        hide_legend: false,
         withdateranges: true,
-        range: "3M",
+        range: "6M",
         container_id: uniqueId,
-        studies: ["RSI@tv-basicstudies", "MACD@tv-basicstudies"],
+        studies: [
+          "Volume@tv-basicstudies",
+          "RSI@tv-basicstudies",
+          "MACD@tv-basicstudies",
+        ],
         show_popup_button: true,
-        popup_width: "1000",
-        popup_height: "650",
+        popup_width: "1400",
+        popup_height: "800",
+        support_host: "https://www.tradingview.com",
       });
     };
 
     const existingScript = document.getElementById("tradingview-tv-js");
-    if (existingScript && window.TradingView) {
-      initWidget();
-    } else if (existingScript) {
-      existingScript.addEventListener("load", initWidget);
+    if (existingScript) {
+      if (window.TradingView) {
+        initWidget();
+      } else {
+        existingScript.addEventListener("load", initWidget, { once: true });
+      }
     } else {
       const script = document.createElement("script");
       script.id = "tradingview-tv-js";
@@ -70,7 +79,6 @@ export function TradingViewChart({ ticker, height = 450 }: TradingViewChartProps
 
     return () => {
       if (container) container.innerHTML = "";
-      widgetRef.current = null;
     };
   }, [ticker]);
 
@@ -78,7 +86,6 @@ export function TradingViewChart({ ticker, height = 450 }: TradingViewChartProps
     <div
       ref={containerRef}
       style={{ height, width: "100%" }}
-      className="rounded-lg overflow-hidden"
     />
   );
 }

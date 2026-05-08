@@ -294,23 +294,49 @@ export default function Home() {
               </div>
             </div>
 
+            {/* TradingView Chart — Full Width */}
+            <div className="w-full rounded-xl overflow-hidden border border-border shadow-lg">
+              <div className="flex items-center justify-between px-4 py-2 bg-card border-b border-border">
+                <span className="text-xs font-medium text-muted-foreground flex items-center gap-2">
+                  <Activity className="w-3.5 h-3.5" />
+                  Live Chart
+                </span>
+                <span className="text-[10px] text-muted-foreground/40 font-mono">Powered by TradingView</span>
+              </div>
+              <TradingViewChart ticker={activeTicker} height={650} />
+            </div>
+
+            {/* Key Metrics Strip */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <Card className="bg-card border-card-border">
+                <CardContent className="p-4">
+                  <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">Market Cap</div>
+                  <div className="text-lg font-mono font-medium">{stockData.marketCapFormatted}</div>
+                </CardContent>
+              </Card>
+              <Card className="bg-card border-card-border">
+                <CardContent className="p-4">
+                  <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">P/E Ratio</div>
+                  <div className="text-lg font-mono font-medium">{stockData.peRatio ? formatHebrewNumber(stockData.peRatio, { maximumFractionDigits: 2 }) : '-'}</div>
+                </CardContent>
+              </Card>
+              <Card className="bg-card border-card-border">
+                <CardContent className="p-4">
+                  <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">EPS</div>
+                  <div className="text-lg font-mono font-medium">{stockData.eps ? formatHebrewNumber(stockData.eps, { maximumFractionDigits: 2 }) : '-'}</div>
+                </CardContent>
+              </Card>
+              <Card className="bg-card border-card-border">
+                <CardContent className="p-4">
+                  <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">Industry</div>
+                  <div className="text-sm font-medium truncate" title={stockData.industry || '-'}>{stockData.industry || '-'}</div>
+                </CardContent>
+              </Card>
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Main Column */}
               <div className="lg:col-span-2 space-y-6">
-                {/* TradingView Chart */}
-                <Card className="border-card-border bg-card shadow-md overflow-hidden">
-                  <CardHeader className="flex flex-row items-center justify-between pb-2">
-                    <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                      <Activity className="w-4 h-4" />
-                      Live Chart — TradingView
-                    </CardTitle>
-                    <span className="text-[10px] text-muted-foreground/50 font-mono">Powered by TradingView</span>
-                  </CardHeader>
-                  <CardContent className="p-0">
-                    <TradingViewChart ticker={activeTicker} height={500} />
-                  </CardContent>
-                </Card>
-
                 {/* AI Summary */}
                 <Card className="border-primary/20 bg-primary/5">
                   <CardHeader className="pb-2">
@@ -335,34 +361,6 @@ export default function Home() {
                     )}
                   </CardContent>
                 </Card>
-
-                {/* Key Metrics Grid */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  <Card className="bg-card border-card-border">
-                    <CardContent className="p-4">
-                      <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">Market Cap</div>
-                      <div className="text-lg font-mono font-medium">{stockData.marketCapFormatted}</div>
-                    </CardContent>
-                  </Card>
-                  <Card className="bg-card border-card-border">
-                    <CardContent className="p-4">
-                      <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">P/E Ratio</div>
-                      <div className="text-lg font-mono font-medium">{stockData.peRatio ? formatHebrewNumber(stockData.peRatio, { maximumFractionDigits: 2 }) : '-'}</div>
-                    </CardContent>
-                  </Card>
-                  <Card className="bg-card border-card-border">
-                    <CardContent className="p-4">
-                      <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">EPS</div>
-                      <div className="text-lg font-mono font-medium">{stockData.eps ? formatHebrewNumber(stockData.eps, { maximumFractionDigits: 2 }) : '-'}</div>
-                    </CardContent>
-                  </Card>
-                  <Card className="bg-card border-card-border">
-                    <CardContent className="p-4">
-                      <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">Industry</div>
-                      <div className="text-sm font-medium truncate" title={stockData.industry || '-'}>{stockData.industry || '-'}</div>
-                    </CardContent>
-                  </Card>
-                </div>
               </div>
 
               {/* Sidebar Column */}
