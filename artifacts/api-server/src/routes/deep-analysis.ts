@@ -1,4 +1,5 @@
 import { Router } from "express";
+import https from "https";
 import yahooFinanceMod from "yahoo-finance2";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { GetStockDeepAnalysisParams } from "@workspace/api-zod";
@@ -23,6 +24,82 @@ function pct(value: number | null | undefined): string {
   return `${(value * 100).toFixed(1)}%`;
 }
 
+interface QuarterlyData {
+  date: string;
+  revenue: number | null;
+  netIncome: number | null;
+  grossProfit: number | null;
+  dilutedEPS: number | null;
+}
+
+function fetchQuarterlyTimeseries(ticker: string): Promise<QuarterlyData[]> {
+  return new Promise((resolve) => {
+    const period1 = Math.floor((Date.now() - 2 * 365 * 24 * 60 * 60 * 1000) / 1000);
+    const period2 = Math.floor(Date.now() / 1000);
+    const types = [
+      "quarterlyTotalRevenue",
+      "quarterlyNetIncome",
+      "quarterlyGrossProfit",
+      "quarterlyDilutedEPS",
+    ].join(",");
+    const url = `https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${ticker}?type=${encodeURIComponent(types)}&period1=${period1}&period2=${period2}&merge=false`;
+
+    https.get(url, { headers: { "User-Agent": "Mozilla/5.0", Accept: "application/json" } }, (res) => {
+      let data = "";
+      res.on("data", (c) => (data += c));
+      res.on("end", () => {
+        try {
+          const json = JSON.parse(data);
+          const results: unknown[] = json?.timeseries?.result ?? [];
+
+          const byDate = new Map<string, Partial<Record<"revenue" | "netIncome" | "grossProfit" | "dilutedEPS", number>>>();
+
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const extract = (series: any[], field: "revenue" | "netIncome" | "grossProfit" | "dilutedEPS") => {
+            for (const item of series) {
+              const date: string = item.asOfDate;
+              if (!byDate.has(date)) byDate.set(date, {});
+              const raw = item.reportedValue?.raw;
+              if (raw != null) byDate.get(date)![field] = raw;
+            }
+          };
+
+          for (const r of results as Record<string, unknown>[]) {
+            if (Array.isArray(r.quarterlyTotalRevenue)) extract(r.quarterlyTotalRevenue, "revenue");
+            if (Array.isArray(r.quarterlyNetIncome)) extract(r.quarterlyNetIncome, "netIncome");
+            if (Array.isArray(r.quarterlyGrossProfit)) extract(r.quarterlyGrossProfit, "grossProfit");
+            if (Array.isArray(r.quarterlyDilutedEPS)) extract(r.quarterlyDilutedEPS, "dilutedEPS");
+          }
+
+          const sorted: QuarterlyData[] = Array.from(byDate.entries())
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .map(([date, vals]) => ({
+              date,
+              revenue: vals.revenue ?? null,
+              netIncome: vals.netIncome ?? null,
+              grossProfit: vals.grossProfit ?? null,
+              dilutedEPS: vals.dilutedEPS ?? null,
+            }));
+
+          resolve(sorted);
+        } catch {
+          resolve([]);
+        }
+      });
+    }).on("error", () => resolve([]));
+  });
+}
+
+function robustParseJson(str: string): Record<string, unknown> | null {
+  if (!str || str.trim() === "") return null;
+  try { return JSON.parse(str); } catch { /* continue */ }
+  try { return JSON.parse(jsonrepair(str)); } catch { /* continue */ }
+  const extracted = str.match(/\{[\s\S]*\}/)?.[0];
+  if (!extracted) return null;
+  try { return JSON.parse(jsonrepair(extracted)); } catch { /* continue */ }
+  return null;
+}
+
 router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
   const parse = GetStockDeepAnalysisParams.safeParse(req.params);
   if (!parse.success) {
@@ -34,178 +111,150 @@ router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
   const upperTicker = ticker.toUpperCase();
 
   try {
-    const [quoteResult, qsResult] = await Promise.allSettled([
-      yahooFinance.quote(upperTicker),
+    // Fetch Yahoo Finance data + quarterly timeseries in parallel
+    const [quoteResult, qsResult, quarterlyData] = await Promise.all([
+      yahooFinance.quote(upperTicker).catch(() => null),
       yahooFinance.quoteSummary(upperTicker, {
-        modules: [
-          "assetProfile",
-          "financialData",
-          "defaultKeyStatistics",
-          "calendarEvents",
-          "earningsTrend",
-          "earnings",
-          "earningsHistory",
-          "incomeStatementHistory",
-        ],
-      }),
+        modules: ["assetProfile", "financialData", "defaultKeyStatistics", "calendarEvents"],
+      }).catch(() => null),
+      fetchQuarterlyTimeseries(upperTicker),
     ]);
 
-    if (quoteResult.status === "rejected") {
+    if (!quoteResult) {
       res.status(404).json({ error: "Not found", message: `Ticker ${upperTicker} not found` });
       return;
     }
 
-    const q = quoteResult.value;
-    const qs = qsResult.status === "fulfilled" ? qsResult.value : null;
+    const q = quoteResult;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const qs: any = qsResult;
 
     const profile = qs?.assetProfile;
     const financials = qs?.financialData;
     const keyStats = qs?.defaultKeyStatistics;
 
-    // Primary source: earnings.financialsChart.quarterly (last 4 quarters of revenue + earnings)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const quarterlyFinancials: any[] = qs?.earnings?.financialsChart?.quarterly ?? [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const quarterlyEps: any[] = qs?.earnings?.earningsChart?.quarterly ?? [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const earningsHistory: any[] = qs?.earningsHistory?.history ?? [];
-    // Fallback: incomeStatementHistory (annual, less granular)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const incomeHistory: any[] = qs?.incomeStatementHistory?.incomeStatementHistory ?? [];
-
-    // Build quarterly context from earnings module
-    const latestQ = quarterlyFinancials[quarterlyFinancials.length - 1];
-    const prevQ = quarterlyFinancials[quarterlyFinancials.length - 2];
-    const latestEpsQ = quarterlyEps[quarterlyEps.length - 1];
-    const latestEpsHistory = earningsHistory[earningsHistory.length - 1];
-
-    // Fallback to incomeStatementHistory
-    const latestIncome = incomeHistory[0];
-    const prevIncome = incomeHistory[1];
-
-    const latestRev = latestQ?.revenue ?? latestIncome?.totalRevenue ?? null;
-    const prevRev = prevQ?.revenue ?? prevIncome?.totalRevenue ?? null;
-    const latestEarnings = latestQ?.earnings ?? latestIncome?.netIncome ?? null;
-    const latestEpsVal = latestEpsQ?.actual ?? latestEpsHistory?.epsActual ?? q.epsTrailingTwelveMonths ?? null;
-    const epsEstimate = latestEpsQ?.estimate ?? latestEpsHistory?.epsEstimate ?? null;
-    const epsSurprise = latestEpsHistory?.surprisePercent ?? null;
-    const latestPeriod = latestQ?.date ?? latestEpsQ?.date ?? (latestIncome?.endDate ? new Date(latestIncome.endDate).toLocaleDateString("he-IL") : null);
-
-    const revGrowthQoQ = latestRev && prevRev
-      ? ((latestRev / prevRev - 1) * 100).toFixed(1) + "%"
-      : "N/A";
-
     const companyName = q.longName ?? q.shortName ?? upperTicker;
 
-    // Build all 4 quarters summary if available
-    const quartersText = quarterlyFinancials.length > 0
-      ? quarterlyFinancials.map(qf => {
-        const qeps = quarterlyEps.find((e: { date: string }) => e.date === qf.date);
-        return `  ${qf.date}: הכנסות ${formatNum(qf.revenue)}, רווח ${formatNum(qf.earnings)}, EPS בפועל ${qeps?.actual?.toFixed(2) ?? "N/A"} (אומדן ${qeps?.estimate?.toFixed(2) ?? "N/A"})`;
+    // Build quarterly context from timeseries data
+    const latestQ = quarterlyData[quarterlyData.length - 1] ?? null;
+    const prevQ = quarterlyData[quarterlyData.length - 2] ?? null;
+
+    const revGrowthQoQ = latestQ?.revenue && prevQ?.revenue
+      ? ((latestQ.revenue / prevQ.revenue - 1) * 100).toFixed(1) + "%"
+      : "N/A";
+    const niGrowthQoQ = latestQ?.netIncome && prevQ?.netIncome
+      ? ((latestQ.netIncome / prevQ.netIncome - 1) * 100).toFixed(1) + "%"
+      : "N/A";
+
+    const quartersTable = quarterlyData.length > 0
+      ? quarterlyData.map(qd => {
+        const revVsPrev = quarterlyData.indexOf(qd) > 0
+          ? ((qd.revenue ?? 0) / (quarterlyData[quarterlyData.indexOf(qd) - 1].revenue ?? 1) - 1 * 100)
+          : null;
+        void revVsPrev;
+        return `  ${qd.date}: הכנסות=${formatNum(qd.revenue)}, רווח נקי=${formatNum(qd.netIncome)}, רווח גולמי=${formatNum(qd.grossProfit)}, EPS=${qd.dilutedEPS?.toFixed(2) ?? "N/A"}`;
       }).join("\n")
-      : "  אין נתוני רבעונים זמינים";
+      : "  אין נתוני רבעונים זמינים ממקור נתונים";
 
     const dataContext = `
 חברה: ${companyName} (${upperTicker})
 תעשייה: ${profile?.industry ?? "N/A"} | סקטור: ${profile?.sector ?? "N/A"}
 בורסה: ${q.fullExchangeName ?? q.exchange ?? "N/A"} | מטבע: ${q.currency ?? "USD"}
 
---- נתוני שוק ---
-מחיר: ${q.regularMarketPrice?.toFixed(2)} | שינוי יומי: ${q.regularMarketChangePercent?.toFixed(2)}%
+--- נתוני שוק עדכניים ---
+מחיר: $${q.regularMarketPrice?.toFixed(2)} | שינוי יומי: ${q.regularMarketChangePercent?.toFixed(2)}%
 שווי שוק: ${formatNum(q.marketCap)}
-מכפיל רווח (P/E): ${q.trailingPE?.toFixed(1) ?? "N/A"} | P/E עתידי: ${q.forwardPE?.toFixed(1) ?? "N/A"}
-EPS (TTM): ${q.epsTrailingTwelveMonths?.toFixed(2) ?? "N/A"} | EPS עתידי: ${q.epsForward?.toFixed(2) ?? "N/A"}
-מכפיל מכירות: ${keyStats?.priceToSalesRatioTTM?.toFixed(2) ?? "N/A"}
-מכפיל ספר: ${keyStats?.priceToBook?.toFixed(2) ?? "N/A"}
+P/E trailing: ${q.trailingPE?.toFixed(1) ?? "N/A"} | P/E forward: ${q.forwardPE?.toFixed(1) ?? "N/A"}
+EPS TTM: $${q.epsTrailingTwelveMonths?.toFixed(2) ?? "N/A"} | EPS forward: $${q.epsForward?.toFixed(2) ?? "N/A"}
+P/S: ${keyStats?.priceToSalesRatioTTM?.toFixed(2) ?? "N/A"} | P/B: ${keyStats?.priceToBook?.toFixed(2) ?? "N/A"}
 Beta: ${keyStats?.beta?.toFixed(2) ?? "N/A"}
-52W High: ${q.fiftyTwoWeekHigh?.toFixed(2) ?? "N/A"} | 52W Low: ${q.fiftyTwoWeekLow?.toFixed(2) ?? "N/A"}
+52W High: $${q.fiftyTwoWeekHigh?.toFixed(2) ?? "N/A"} | 52W Low: $${q.fiftyTwoWeekLow?.toFixed(2) ?? "N/A"}
 
 --- נתונים פיננסיים (TTM) ---
-הכנסות (TTM): ${formatNum(financials?.totalRevenue)}
+הכנסות TTM: ${formatNum(financials?.totalRevenue)}
 EBITDA: ${formatNum(financials?.ebitda)}
 שולי רווח גולמי: ${pct(financials?.grossMargins)}
 שולי EBITDA: ${pct(financials?.ebitdaMargins)}
 שולי רווח תפעולי: ${pct(financials?.operatingMargins)}
 שולי רווח נקי: ${pct(financials?.profitMargins)}
-צמיחת הכנסות (YoY): ${pct(financials?.revenueGrowth)}
-צמיחת רווח: ${pct(financials?.earningsGrowth)}
-ROE: ${pct(financials?.returnOnEquity)}
-ROA: ${pct(financials?.returnOnAssets)}
+צמיחת הכנסות YoY: ${pct(financials?.revenueGrowth)}
+צמיחת רווח YoY: ${pct(financials?.earningsGrowth)}
+ROE: ${pct(financials?.returnOnEquity)} | ROA: ${pct(financials?.returnOnAssets)}
 מזומן: ${formatNum(financials?.totalCash)} | חוב: ${formatNum(financials?.totalDebt)}
-יחס חוב/הון עצמי: ${financials?.debtToEquity?.toFixed(2) ?? "N/A"}
+יחס חוב/הון: ${financials?.debtToEquity?.toFixed(2) ?? "N/A"}
 
---- ביצועים רבעוניים (4 רבעונים אחרונים) ---
-${quartersText}
+--- ביצועים רבעוניים (נתוני Yahoo Finance Timeseries — 5 רבעונים אחרונים) ---
+${quartersTable}
 
---- רבעון אחרון (${latestPeriod ?? "N/A"}) ---
-הכנסות: ${formatNum(latestRev)}
-רווח נקי: ${formatNum(latestEarnings)}
-EPS בפועל: ${latestEpsVal?.toFixed(2) ?? "N/A"} | EPS אומדן: ${epsEstimate?.toFixed(2) ?? "N/A"}
-הפתעת EPS: ${epsSurprise != null ? (epsSurprise * 100).toFixed(1) + "%" : "N/A"}
-שינוי הכנסות QoQ: ${revGrowthQoQ}
+--- השוואת שני רבעונים אחרונים ---
+רבעון אחרון (${latestQ?.date ?? "N/A"}):
+  הכנסות: ${formatNum(latestQ?.revenue)} | רווח נקי: ${formatNum(latestQ?.netIncome)} | EPS: $${latestQ?.dilutedEPS?.toFixed(2) ?? "N/A"}
+רבעון קודם (${prevQ?.date ?? "N/A"}):
+  הכנסות: ${formatNum(prevQ?.revenue)} | רווח נקי: ${formatNum(prevQ?.netIncome)} | EPS: $${prevQ?.dilutedEPS?.toFixed(2) ?? "N/A"}
+שינוי QoQ: הכנסות ${revGrowthQoQ} | רווח נקי ${niGrowthQoQ}
 
 --- תיאור עסקי ---
 ${profile?.longBusinessSummary ? profile.longBusinessSummary.slice(0, 800) : "N/A"}
 `.trim();
 
-    const systemPrompt = `אתה אנליסט בכיר במחלקת ניתוח עומק (Deep Research) של קרן גידור גלובלית מובילה, עם התמחות בזיהוי מוקדם של מקומות שבהם ערך כלכלי אמיתי נוצר ונלכד.
-המטרה שלך היא לא לנתח חברה - אלא להבין את המערכת השלמה שבה היא פועלת, ולמקם אותה בתוך זרימת הערך.
-כתוב בעברית. חד, ישיר, בלי מילים מיותרות. חשיבה של כסף - לא של כותרות. כל סעיף חייב לענות על: איפה הערך זז, ולמה עכשיו.
-CRITICAL: החזר אך ורק JSON תקני. ללא markdown. ללא טקסט מחוץ ל-JSON.
-CRITICAL: אל תשתמש לעולם בגרשיים כפולים (") בתוך ערכי הטקסט - השתמש בגרש בודד (') או בגרשיים עבריים (״) במקום. לדוגמה: כתוב דו״חות ולא דו"חות.`;
+    const systemPrompt = `אתה אנליסט בכיר במחלקת ניתוח עומק (Deep Research) של קרן גידור גלובלית מובילה.
+הנתונים שסופקו לך הם נתוני Yahoo Finance אמיתיים ועדכניים — השתמש בהם בדיוק כפי שהם.
+כתוב בעברית. חד, ישיר, ללא מילים מיותרות. חשיבה של כסף. כל סעיף חייב לענות: איפה הערך זז ולמה עכשיו.
+CRITICAL: החזר אך ורק JSON תקני, ללא markdown, ללא טקסט מחוץ ל-JSON.
+CRITICAL: אל תשתמש בגרשיים (") בתוך ערכי טקסט - השתמש בגרש בודד (') או גרשיים עבריים (״) במקום.`;
 
-    const userPrompt = `נתח את החברה הבאה לפי המבנה המדויק:
+    const userPrompt = `נתח את ${companyName} (${upperTicker}) לפי הנתונים המדויקים הבאים:
 
 ${dataContext}
 
-החזר JSON עם המבנה הבא בדיוק (כל השדות חובה, אל תשמיט אף שדה):
+החזר JSON עם המבנה הבא בדיוק — כל שדות חובה:
 {
   "systemUnderstanding": {
-    "valueChain": "פירוק שרשרת הערך של התעשייה - Upstream → Midstream → Downstream. איפה באמת נוצר הערך הכלכלי? מי לוכד מרווחים גבוהים?",
-    "valueCreation": "איפה צווארי הבקבוק האמיתיים בתעשייה? מה נותן כוח - טכנולוגיה/רגולציה/סקייל/IP?",
-    "bottlenecks": "מה הם כוחות המאקרו שדוחפים או פוגעים בתעשייה הזו עכשיו?",
-    "macroTrends": "אילו מגמות מבניות משפיעות על התעשייה - חיוביות ושליליות"
+    "valueChain": "פירוק שרשרת ערך התעשייה. איפה נוצר ונלכד הערך האמיתי?",
+    "valueCreation": "צווארי הבקבוק האמיתיים. מה נותן כוח?",
+    "bottlenecks": "כוחות מאקרו שדוחפים או פוגעים בתעשייה עכשיו",
+    "macroTrends": "מגמות מבניות - חיוביות ושליליות"
   },
   "companyPositioning": {
-    "positionInChain": "איפה בדיוק החברה יושבת בשרשרת הערך? upstream/midstream/downstream?",
-    "functionalRole": "מה היא באמת עושה בתוך המערכת? לא סיסמאות - תפקיד פונקציונלי אמיתי",
-    "positionQuality": "האם היא יושבת באזור בריכת ערך (Value Pool) או באזור תחרותי ושחוק? נמק"
+    "positionInChain": "מיקום בשרשרת הערך: upstream/midstream/downstream",
+    "functionalRole": "תפקיד פונקציונלי אמיתי בתוך המערכת",
+    "positionQuality": "בריכת ערך או אזור תחרותי שחוק? נמק"
   },
   "competitiveAdvantage": {
-    "differentiation": "מה מייחד אותה בפועל לעומת מתחרות? מה שאי אפשר לשכפל בקלות?",
-    "moat": "האם יש לה יתרון בר קיימא (Moat)? network effects/switching costs/cost advantage/IP? כמה זמן ישמר?",
-    "competitiveLandscape": "מתחרות ישירות ועקיפות. מי יכול להיכנס לשוק? מה עוצמת האיום?"
+    "differentiation": "בידול אמיתי שאי אפשר לשכפל",
+    "moat": "יתרון בר קיימא: network effects/switching costs/IP/cost advantage?",
+    "competitiveLandscape": "מתחרים ישירים ועקיפים. עוצמת האיום"
   },
   "valueCaptureQuality": {
-    "valueCapture": "האם החברה באמת לוכדת רווחיות - או רק נהנית מהייפ? ראיות מהמספרים",
-    "revenueQuality": "האם ההכנסות יציבות, חוזרות, עם כוח תמחור? מה סוג ההכנסות (SaaS/עסקות/ציקליות)?",
-    "warningSigns": "מה יכול להעיד שהשוק מתמחר אותה בצורה שגויה? אלמנטים מדאיגים בנתונים"
+    "valueCapture": "האם לוכדת רווחיות אמיתית? ראיות מהמספרים שסופקו",
+    "revenueQuality": "יציבות, חזרתיות, כוח תמחור. סוג הכנסות",
+    "warningSigns": "אלמנטים מדאיגים בנתונים - מה יכול להיות שגוי בתמחור?"
   },
   "chainComparison": {
-    "betterAlternatives": "האם יש חברות אחרות באותה שרשרת שתופסות ערך בצורה טובה יותר? אילו?",
-    "relativePositioning": "האם היא הבחירה הטובה ביותר בתעשייה - או רק נראית טוב על פני השטח? מדוע?"
+    "betterAlternatives": "חברות שתופסות ערך טוב יותר באותה שרשרת",
+    "relativePositioning": "הבחירה הטובה ביותר בתעשייה? למה?"
   },
   "forwardLooking": {
-    "catalysts": "מה יכול לגרום לשוק לשנות תמחור? (Repricing Catalysts) - תאריכים/אירועים/מוצרים",
-    "bullCase": "תרחיש שורי: מה צריך לקרות כדי שהמניה תעלה משמעותית? מה המכפלה הפוטנציאלית?",
-    "bearCase": "תרחיש דובי: מה הסיכונים האמיתיים? מה יכול להרוס את התזה?",
-    "baseCase": "תרחיש בסיס: הנחות הצמיחה הריאליות וכיוון המניה ב-12 חודשים",
-    "winConditions": "מה חייב לקרות כדי שהיא תהפוך לזוכה אמיתית? רשימה קצרה של תנאים קריטיים"
+    "catalysts": "Repricing catalysts - מה יגרום לשוק לשנות תמחור?",
+    "bullCase": "תרחיש שורי: מה צריך לקרות? מכפלה פוטנציאלית?",
+    "bearCase": "תרחיש דובי: סיכונים אמיתיים שיהרסו את התזה",
+    "baseCase": "תרחיש בסיס: צמיחה ריאלית וכיוון ב-12 חודשים",
+    "winConditions": "תנאים קריטיים שחייבים לקרות כדי לנצח"
   },
   "conclusion": {
-    "classification": "בחר בדיוק אחד: value_pool / hype / tactical / value_trap",
-    "classificationLabel": "תרגום: מניית בריכת ערך / מניית הייפ / חוליה טקטית מעניינת / מלכודת ערך",
-    "reasoning": "למה בחרת בסיווג הזה? 2-3 משפטים חדים עם הביסוס האמיתי",
-    "actionableIdeas": "רעיונות לפעולה: Long/Short/Pair/Watchlist - עם היגיון ברור של למה עכשיו"
+    "classification": "value_pool / hype / tactical / value_trap",
+    "classificationLabel": "מניית בריכת ערך / מניית הייפ / חוליה טקטית מעניינת / מלכודת ערך",
+    "reasoning": "2-3 משפטים חדים עם ביסוס אמיתי",
+    "actionableIdeas": "Long/Short/Pair/Watchlist עם היגיון ברור"
   },
   "eventAnalysis": {
-    "realityVsNarrative": "מה בפועל קרה בדוח הרבעוני האחרון? נתח את מספרי ההכנסות, הרווח והפתעת ה-EPS מול הציפיות. עובדות יבשות מול הסיפור שמוכרים בכותרת.",
-    "secondOrderThinking": "מה ההשלכות הלא-מיידיות שרוב השוק מפספס מהדוח האחרון? מה האנליסטים לא רואים?",
-    "capitalFlow": "לאן כסף עשוי לזרום בעקבות הדוח? (סקטורים/תתי-סקטורים/סוגי נכסים)",
-    "winners": "אילו חברות או תעשיות עשויות להרוויח מהמצב הנוכחי של ${companyName}?",
-    "losers": "מי צפוי להיפגע? איפה החולשה נחשפת בעקבות הדוח?",
-    "materiality": "האם הדוח מייצג רעש קצר טווח או שינוי מגמה אמיתי? מה ההשפעה על החברה/סקטור/שוק?",
-    "actionableInsights": "רעיונות מסחר קונקרטיים מהדוח: Long/Short/Pair/Watchlist עם תזמון ונימוק"
+    "realityVsNarrative": "נתח את הדוח הרבעוני האחרון לפי המספרים שסופקו. הכנסות בפועל, שינוי QoQ, מה הכותרות אומרות לעומת המציאות",
+    "secondOrderThinking": "מה השוק מפספס? השלכות לא-מיידיות מהמספרים",
+    "capitalFlow": "לאן כסף יזרום בעקבות הנתונים? סקטורים/נכסים",
+    "winners": "מי ירוויח מהמצב הנוכחי של ${companyName}?",
+    "losers": "מי ייפגע? איפה החולשה נחשפת?",
+    "materiality": "רעש קצר טווח או שינוי מגמה? משמעות לחברה/סקטור",
+    "actionableInsights": "Long/Short/Pair/Watchlist ספציפי עם תזמון ונימוק"
   }
 }`;
 
@@ -218,32 +267,17 @@ ${dataContext}
       ],
     });
 
-    const raw = response.choices[0]?.message?.content ?? "{}";
-
-    function robustParseJson(str: string): Record<string, unknown> | null {
-      // Attempt 1: direct parse
-      try { return JSON.parse(str); } catch { /* continue */ }
-
-      // Attempt 2: jsonrepair — fixes structural issues (unclosed braces, dotted keys, etc.)
-      try { return JSON.parse(jsonrepair(str)); } catch { /* continue */ }
-
-      // Attempt 3: extract JSON block and repair
-      const extracted = str.match(/\{[\s\S]*\}/)?.[0];
-      if (!extracted) return null;
-      try { return JSON.parse(jsonrepair(extracted)); } catch { /* continue */ }
-
-      return null;
-    }
+    const raw = response.choices[0]?.message?.content ?? "";
 
     const parsed = robustParseJson(raw);
     if (!parsed) {
-      req.log?.warn({ raw }, "Failed to parse AI JSON response");
+      req.log?.warn({ raw: raw.slice(0, 500) }, "Failed to parse AI JSON response");
       res.status(500).json({ error: "Parse error", message: "Failed to parse AI analysis" });
       return;
     }
 
     const fallbackEvent = {
-      realityVsNarrative: "נתוני דוח רבעוני מוגבלים — ניתוח מבוסס על מדדי TTM",
+      realityVsNarrative: "לא ניתן לנתח - בדוק שהטיקר נכון",
       secondOrderThinking: "N/A",
       capitalFlow: "N/A",
       winners: "N/A",
