@@ -38,3 +38,8 @@ externalPort = 3003
 [[ports]]
 localPort = 22996
 externalPort = 3000
+
+[userenv]
+
+[userenv.shared]
+VITE_ACCESS_CODE = "711000!@#"
