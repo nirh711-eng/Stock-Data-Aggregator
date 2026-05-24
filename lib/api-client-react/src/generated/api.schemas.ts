@@ -162,6 +162,30 @@ export interface AnalysisEvent {
   actionableInsights: string;
 }
 
+export interface AnalystAction {
+  date: string;
+  firm: string;
+  toGrade: string;
+  fromGrade?: string | null;
+  action: string;
+  currentPriceTarget?: number | null;
+  priorPriceTarget?: number | null;
+}
+
+export interface AnalystConsensus {
+  targetMeanPrice?: number | null;
+  targetHighPrice?: number | null;
+  targetLowPrice?: number | null;
+  recommendationKey?: string | null;
+  numberOfAnalystOpinions?: number | null;
+  strongBuy: number;
+  buy: number;
+  hold: number;
+  sell: number;
+  strongSell: number;
+  recentActions: AnalystAction[];
+}
+
 export interface DeepAnalysis {
   ticker: string;
   companyName: string;
@@ -173,6 +197,7 @@ export interface DeepAnalysis {
   forwardLooking: AnalysisForwardLooking;
   conclusion: AnalysisConclusion;
   eventAnalysis?: AnalysisEvent | null;
+  analystConsensus?: AnalystConsensus | null;
   generatedAt: string;
 }
 

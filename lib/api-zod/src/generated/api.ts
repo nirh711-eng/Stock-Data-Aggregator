@@ -201,5 +201,30 @@ export const GetStockDeepAnalysisResponse = zod.object({
       actionableInsights: zod.string(),
     })
     .nullish(),
+  analystConsensus: zod
+    .object({
+      targetMeanPrice: zod.number().nullish(),
+      targetHighPrice: zod.number().nullish(),
+      targetLowPrice: zod.number().nullish(),
+      recommendationKey: zod.string().nullish(),
+      numberOfAnalystOpinions: zod.number().nullish(),
+      strongBuy: zod.number(),
+      buy: zod.number(),
+      hold: zod.number(),
+      sell: zod.number(),
+      strongSell: zod.number(),
+      recentActions: zod.array(
+        zod.object({
+          date: zod.string(),
+          firm: zod.string(),
+          toGrade: zod.string(),
+          fromGrade: zod.string().nullish(),
+          action: zod.string(),
+          currentPriceTarget: zod.number().nullish(),
+          priorPriceTarget: zod.number().nullish(),
+        }),
+      ),
+    })
+    .nullish(),
   generatedAt: zod.string(),
 });

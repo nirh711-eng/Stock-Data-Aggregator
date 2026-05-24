@@ -11,7 +11,11 @@ import {
   TrendingUp, 
   Scale, 
   AlertTriangle,
-  Lightbulb
+  Lightbulb,
+  Target,
+  ArrowUpRight,
+  ArrowDownRight,
+  Minus
 } from "lucide-react";
 import { 
   useGetStockDeepAnalysis, 
@@ -265,6 +269,110 @@ export function DeepAnalysis({ ticker }: DeepAnalysisProps) {
             <div className="px-2 pt-2 border-t border-border/30">
               <Field label="תנאי ניצחון" content={data.forwardLooking.winConditions} />
             </div>
+
+            {/* Analyst Consensus Panel */}
+            {data.analystConsensus && (
+              <div className="pt-4 border-t border-border/40">
+                <div className="flex items-center gap-2 mb-4">
+                  <Target className="w-4 h-4 text-emerald-400" />
+                  <span className="text-sm font-semibold text-emerald-400 uppercase tracking-wide">ציפיות אנליסטים</span>
+                  {data.analystConsensus.numberOfAnalystOpinions != null && (
+                    <span className="text-xs text-muted-foreground">({data.analystConsensus.numberOfAnalystOpinions} אנליסטים)</span>
+                  )}
+                </div>
+
+                {/* Price Targets */}
+                {data.analystConsensus.targetMeanPrice != null && (
+                  <div className="grid grid-cols-3 gap-3 mb-4">
+                    <div className="bg-muted/30 rounded-lg p-3 text-center">
+                      <div className="text-xs text-muted-foreground mb-1">יעד נמוך</div>
+                      <div className="text-base font-bold text-red-400">${data.analystConsensus.targetLowPrice?.toFixed(2) ?? "—"}</div>
+                    </div>
+                    <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-3 text-center">
+                      <div className="text-xs text-emerald-400 mb-1">יעד ממוצע</div>
+                      <div className="text-lg font-bold text-emerald-400">${data.analystConsensus.targetMeanPrice.toFixed(2)}</div>
+                    </div>
+                    <div className="bg-muted/30 rounded-lg p-3 text-center">
+                      <div className="text-xs text-muted-foreground mb-1">יעד גבוה</div>
+                      <div className="text-base font-bold text-green-400">${data.analystConsensus.targetHighPrice?.toFixed(2) ?? "—"}</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Buy/Sell/Hold Bar */}
+                {(() => {
+                  const ac = data.analystConsensus;
+                  const total = ac.strongBuy + ac.buy + ac.hold + ac.sell + ac.strongSell;
+                  if (total === 0) return null;
+                  const bullPct = ((ac.strongBuy + ac.buy) / total * 100).toFixed(0);
+                  const holdPct = (ac.hold / total * 100).toFixed(0);
+                  const bearPct = ((ac.sell + ac.strongSell) / total * 100).toFixed(0);
+                  const recKey = ac.recommendationKey?.toLowerCase() ?? "";
+                  const recColor = recKey.includes("buy") ? "text-emerald-400" : recKey.includes("sell") ? "text-red-400" : "text-yellow-400";
+                  const RecIcon = recKey.includes("buy") ? ArrowUpRight : recKey.includes("sell") ? ArrowDownRight : Minus;
+                  return (
+                    <div className="space-y-2 mb-4">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className={`flex items-center gap-1 font-semibold text-sm ${recColor}`}>
+                          <RecIcon className="w-4 h-4" />
+                          <span className="uppercase tracking-wide">{ac.recommendationKey ?? "N/A"}</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground flex gap-3">
+                          <span className="text-green-400">קנייה {bullPct}%</span>
+                          <span className="text-yellow-400">נייטרל {holdPct}%</span>
+                          <span className="text-red-400">מכירה {bearPct}%</span>
+                        </div>
+                      </div>
+                      <div className="flex h-2 rounded-full overflow-hidden gap-0.5">
+                        <div className="bg-green-500 transition-all" style={{ width: `${bullPct}%` }} />
+                        <div className="bg-yellow-500 transition-all" style={{ width: `${holdPct}%` }} />
+                        <div className="bg-red-500 transition-all" style={{ width: `${bearPct}%` }} />
+                      </div>
+                      <div className="flex justify-between text-xs text-muted-foreground">
+                        <span>Strong Buy {ac.strongBuy} · Buy {ac.buy}</span>
+                        <span>Hold {ac.hold}</span>
+                        <span>Sell {ac.sell} · Strong Sell {ac.strongSell}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Recent Analyst Actions */}
+                {data.analystConsensus.recentActions.length > 0 && (
+                  <div>
+                    <div className="text-xs text-muted-foreground uppercase tracking-wide mb-2">שינויי דירוג אחרונים</div>
+                    <div className="space-y-1.5 max-h-52 overflow-y-auto">
+                      {data.analystConsensus.recentActions.map((action, i) => {
+                        const isUpgrade = action.action === "up";
+                        const isNew = action.action === "init" || action.action === "reit";
+                        const grade = action.toGrade.toLowerCase();
+                        const gradeColor = grade.includes("buy") || grade.includes("outperform") || grade.includes("overweight") || grade.includes("positive")
+                          ? "text-green-400"
+                          : grade.includes("sell") || grade.includes("underperform") || grade.includes("underweight") || grade.includes("negative")
+                            ? "text-red-400"
+                            : "text-yellow-400";
+                        return (
+                          <div key={i} className="flex items-center justify-between text-xs bg-muted/20 rounded px-3 py-1.5">
+                            <div className="flex items-center gap-2 min-w-0">
+                              {isUpgrade ? <ArrowUpRight className="w-3 h-3 text-green-400 shrink-0" /> : isNew ? <Minus className="w-3 h-3 text-blue-400 shrink-0" /> : <ArrowDownRight className="w-3 h-3 text-red-400 shrink-0" />}
+                              <span className="text-muted-foreground truncate">{action.firm}</span>
+                              {action.fromGrade && <span className="text-muted-foreground/50 shrink-0">← {action.fromGrade}</span>}
+                              <span className={`font-semibold shrink-0 ${gradeColor}`}>{action.toGrade}</span>
+                            </div>
+                            <div className="flex items-center gap-3 shrink-0">
+                              {action.currentPriceTarget != null && (
+                                <span className="text-emerald-400 font-mono">${action.currentPriceTarget}</span>
+                              )}
+                              <span className="text-muted-foreground/60" dir="ltr">{action.date}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
 

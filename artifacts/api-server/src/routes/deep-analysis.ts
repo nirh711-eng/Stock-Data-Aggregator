@@ -115,7 +115,7 @@ router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
     const [quoteResult, qsResult, quarterlyData] = await Promise.all([
       yahooFinance.quote(upperTicker).catch(() => null),
       yahooFinance.quoteSummary(upperTicker, {
-        modules: ["assetProfile", "financialData", "defaultKeyStatistics", "calendarEvents"],
+        modules: ["assetProfile", "financialData", "defaultKeyStatistics", "calendarEvents", "recommendationTrend", "upgradeDowngradeHistory"],
       }).catch(() => null),
       fetchQuarterlyTimeseries(upperTicker),
     ]);
@@ -132,6 +132,38 @@ router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
     const profile = qs?.assetProfile;
     const financials = qs?.financialData;
     const keyStats = qs?.defaultKeyStatistics;
+
+    // Build analyst consensus
+    const recTrend = qs?.recommendationTrend?.trend?.[0] ?? null;
+    const upgradeHistory: unknown[] = qs?.upgradeDowngradeHistory?.history ?? [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const recentActions = upgradeHistory.slice(0, 8).map((h: any) => ({
+      date: h.epochGradeDate instanceof Date
+        ? h.epochGradeDate.toISOString().split("T")[0]
+        : typeof h.epochGradeDate === "string"
+          ? h.epochGradeDate.split("T")[0]
+          : String(h.epochGradeDate ?? ""),
+      firm: h.firm ?? "",
+      toGrade: h.toGrade ?? "",
+      fromGrade: h.fromGrade ?? null,
+      action: h.action ?? "",
+      currentPriceTarget: h.currentPriceTarget ?? null,
+      priorPriceTarget: h.priorPriceTarget ?? null,
+    }));
+
+    const analystConsensus = {
+      targetMeanPrice: financials?.targetMeanPrice ?? null,
+      targetHighPrice: financials?.targetHighPrice ?? null,
+      targetLowPrice: financials?.targetLowPrice ?? null,
+      recommendationKey: financials?.recommendationKey ?? null,
+      numberOfAnalystOpinions: financials?.numberOfAnalystOpinions ?? null,
+      strongBuy: recTrend?.strongBuy ?? 0,
+      buy: recTrend?.buy ?? 0,
+      hold: recTrend?.hold ?? 0,
+      sell: recTrend?.sell ?? 0,
+      strongSell: recTrend?.strongSell ?? 0,
+      recentActions,
+    };
 
     const companyName = q.longName ?? q.shortName ?? upperTicker;
 
@@ -192,6 +224,12 @@ ${quartersTable}
 רבעון קודם (${prevQ?.date ?? "N/A"}):
   הכנסות: ${formatNum(prevQ?.revenue)} | רווח נקי: ${formatNum(prevQ?.netIncome)} | EPS: $${prevQ?.dilutedEPS?.toFixed(2) ?? "N/A"}
 שינוי QoQ: הכנסות ${revGrowthQoQ} | רווח נקי ${niGrowthQoQ}
+
+--- ציפיות אנליסטים ---
+קונצנזוס: ${analystConsensus.recommendationKey ?? "N/A"} | מספר אנליסטים: ${analystConsensus.numberOfAnalystOpinions ?? "N/A"}
+מחיר יעד ממוצע: $${analystConsensus.targetMeanPrice?.toFixed(2) ?? "N/A"} | גבוה: $${analystConsensus.targetHighPrice?.toFixed(2) ?? "N/A"} | נמוך: $${analystConsensus.targetLowPrice?.toFixed(2) ?? "N/A"}
+דירוגים (חודש אחרון): Strong Buy=${analystConsensus.strongBuy} | Buy=${analystConsensus.buy} | Hold=${analystConsensus.hold} | Sell=${analystConsensus.sell} | Strong Sell=${analystConsensus.strongSell}
+${analystConsensus.recentActions.length > 0 ? "שינויי דירוג אחרונים:\n" + analystConsensus.recentActions.map(a => `  ${a.date}: ${a.firm} — ${a.fromGrade ? a.fromGrade + " → " : ""}${a.toGrade}${a.currentPriceTarget ? ` (PT: $${a.currentPriceTarget})` : ""}`).join("\n") : ""}
 
 --- תיאור עסקי ---
 ${profile?.longBusinessSummary ? profile.longBusinessSummary.slice(0, 800) : "N/A"}
@@ -297,6 +335,7 @@ ${dataContext}
       forwardLooking: parsed.forwardLooking ?? {},
       conclusion: parsed.conclusion ?? {},
       eventAnalysis: parsed.eventAnalysis ?? fallbackEvent,
+      analystConsensus,
       generatedAt: new Date().toISOString(),
     });
   } catch (err) {

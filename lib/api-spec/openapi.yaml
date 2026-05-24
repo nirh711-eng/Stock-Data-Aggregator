@@ -384,6 +384,9 @@ components:
         eventAnalysis:
           $ref: "#/components/schemas/AnalysisEvent"
           nullable: true
+        analystConsensus:
+          $ref: "#/components/schemas/AnalystConsensus"
+          nullable: true
         generatedAt:
           type: string
       required:
@@ -531,6 +534,72 @@ components:
         - losers
         - materiality
         - actionableInsights
+
+    AnalystConsensus:
+      type: object
+      properties:
+        targetMeanPrice:
+          type: number
+          nullable: true
+        targetHighPrice:
+          type: number
+          nullable: true
+        targetLowPrice:
+          type: number
+          nullable: true
+        recommendationKey:
+          type: string
+          nullable: true
+        numberOfAnalystOpinions:
+          type: number
+          nullable: true
+        strongBuy:
+          type: number
+        buy:
+          type: number
+        hold:
+          type: number
+        sell:
+          type: number
+        strongSell:
+          type: number
+        recentActions:
+          type: array
+          items:
+            $ref: "#/components/schemas/AnalystAction"
+      required:
+        - strongBuy
+        - buy
+        - hold
+        - sell
+        - strongSell
+        - recentActions
+
+    AnalystAction:
+      type: object
+      properties:
+        date:
+          type: string
+        firm:
+          type: string
+        toGrade:
+          type: string
+        fromGrade:
+          type: string
+          nullable: true
+        action:
+          type: string
+        currentPriceTarget:
+          type: number
+          nullable: true
+        priorPriceTarget:
+          type: number
+          nullable: true
+      required:
+        - date
+        - firm
+        - toGrade
+        - action
 
     WatchlistCheckRequest:
       type: object
