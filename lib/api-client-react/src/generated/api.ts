@@ -17,6 +17,7 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  DailyAnalysis,
   DeepAnalysis,
   ErrorResponse,
   GetStockHistoryParams,
@@ -488,6 +489,96 @@ export const useCheckWatchlist = <
 > => {
   return useMutation(getCheckWatchlistMutationOptions(options));
 };
+
+/**
+ * Returns real-time daily analysis — what is moving the stock, buyer/seller pressure, analyst consensus
+ * @summary Get daily AI analysis for a stock
+ */
+export const getGetStockDailyAnalysisUrl = (ticker: string) => {
+  return `/api/stocks/${ticker}/daily-analysis`;
+};
+
+export const getStockDailyAnalysis = async (
+  ticker: string,
+  options?: RequestInit,
+): Promise<DailyAnalysis> => {
+  return customFetch<DailyAnalysis>(getGetStockDailyAnalysisUrl(ticker), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetStockDailyAnalysisQueryKey = (ticker: string) => {
+  return [`/api/stocks/${ticker}/daily-analysis`] as const;
+};
+
+export const getGetStockDailyAnalysisQueryOptions = <
+  TData = Awaited<ReturnType<typeof getStockDailyAnalysis>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  ticker: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getStockDailyAnalysis>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetStockDailyAnalysisQueryKey(ticker);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getStockDailyAnalysis>>
+  > = ({ signal }) =>
+    getStockDailyAnalysis(ticker, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!ticker,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getStockDailyAnalysis>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetStockDailyAnalysisQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getStockDailyAnalysis>>
+>;
+export type GetStockDailyAnalysisQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get daily AI analysis for a stock
+ */
+
+export function useGetStockDailyAnalysis<
+  TData = Awaited<ReturnType<typeof getStockDailyAnalysis>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  ticker: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getStockDailyAnalysis>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetStockDailyAnalysisQueryOptions(ticker, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * Returns a structured multi-layer analysis using hedge fund analyst frameworks — company positioning, competitive moat, value capture, catalysts, and more

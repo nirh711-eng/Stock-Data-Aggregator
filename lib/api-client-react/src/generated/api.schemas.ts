@@ -201,6 +201,69 @@ export interface DeepAnalysis {
   generatedAt: string;
 }
 
+export interface DailyMetrics {
+  price: number;
+  priceChangePercent: number;
+  volume?: number | null;
+  avgVolume10d?: number | null;
+  volumeRatio?: number | null;
+  dayLow?: number | null;
+  dayHigh?: number | null;
+  pricePositionInRange?: number | null;
+  shortPercentOfFloat?: number | null;
+  shortRatio?: number | null;
+  fiftyTwoWeekChangePercent?: number | null;
+}
+
+export interface TechnicalOutlook {
+  direction: string;
+  stateDescription: string;
+  score?: number | null;
+}
+
+export interface NewsItem {
+  title: string;
+  publisher?: string | null;
+  url?: string | null;
+  publishedAt?: string | null;
+}
+
+export interface SigDev {
+  headline: string;
+  date?: string | null;
+}
+
+export interface AnalystSummary {
+  recommendationKey?: string | null;
+  targetMeanPrice?: number | null;
+  numberOfAnalystOpinions?: number | null;
+  strongBuy: number;
+  buy: number;
+  hold: number;
+  sell: number;
+  strongSell: number;
+}
+
+export interface DailyAiAnalysis {
+  whatsMoving: string;
+  buyerSellerBalance: string;
+  analystView: string;
+  actionable: string;
+}
+
+export interface DailyAnalysis {
+  ticker: string;
+  companyName: string;
+  marketState?: string | null;
+  dailyMetrics: DailyMetrics;
+  technicalOutlook?: TechnicalOutlook | null;
+  recentNews: NewsItem[];
+  sigDevs: SigDev[];
+  analystSummary: AnalystSummary;
+  aiAnalysis: DailyAiAnalysis;
+  generatedAt: string;
+}
+
 export interface WatchlistEntry {
   ticker: string;
   lastKnownReportDate?: string | null;

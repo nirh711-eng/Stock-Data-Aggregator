@@ -142,6 +142,71 @@ export const CheckWatchlistResponse = zod.object({
 });
 
 /**
+ * Returns real-time daily analysis — what is moving the stock, buyer/seller pressure, analyst consensus
+ * @summary Get daily AI analysis for a stock
+ */
+export const GetStockDailyAnalysisParams = zod.object({
+  ticker: zod.coerce.string(),
+});
+
+export const GetStockDailyAnalysisResponse = zod.object({
+  ticker: zod.string(),
+  companyName: zod.string(),
+  marketState: zod.string().nullish(),
+  dailyMetrics: zod.object({
+    price: zod.number(),
+    priceChangePercent: zod.number(),
+    volume: zod.number().nullish(),
+    avgVolume10d: zod.number().nullish(),
+    volumeRatio: zod.number().nullish(),
+    dayLow: zod.number().nullish(),
+    dayHigh: zod.number().nullish(),
+    pricePositionInRange: zod.number().nullish(),
+    shortPercentOfFloat: zod.number().nullish(),
+    shortRatio: zod.number().nullish(),
+    fiftyTwoWeekChangePercent: zod.number().nullish(),
+  }),
+  technicalOutlook: zod
+    .object({
+      direction: zod.string(),
+      stateDescription: zod.string(),
+      score: zod.number().nullish(),
+    })
+    .nullish(),
+  recentNews: zod.array(
+    zod.object({
+      title: zod.string(),
+      publisher: zod.string().nullish(),
+      url: zod.string().nullish(),
+      publishedAt: zod.string().nullish(),
+    }),
+  ),
+  sigDevs: zod.array(
+    zod.object({
+      headline: zod.string(),
+      date: zod.string().nullish(),
+    }),
+  ),
+  analystSummary: zod.object({
+    recommendationKey: zod.string().nullish(),
+    targetMeanPrice: zod.number().nullish(),
+    numberOfAnalystOpinions: zod.number().nullish(),
+    strongBuy: zod.number(),
+    buy: zod.number(),
+    hold: zod.number(),
+    sell: zod.number(),
+    strongSell: zod.number(),
+  }),
+  aiAnalysis: zod.object({
+    whatsMoving: zod.string(),
+    buyerSellerBalance: zod.string(),
+    analystView: zod.string(),
+    actionable: zod.string(),
+  }),
+  generatedAt: zod.string(),
+});
+
+/**
  * Returns a structured multi-layer analysis using hedge fund analyst frameworks — company positioning, competitive moat, value capture, catalysts, and more
  * @summary Get deep AI analysis based on hedge fund frameworks
  */

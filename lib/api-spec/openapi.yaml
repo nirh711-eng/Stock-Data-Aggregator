@@ -144,6 +144,38 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /stocks/{ticker}/daily-analysis:
+    get:
+      operationId: getStockDailyAnalysis
+      tags: [stocks]
+      summary: Get daily AI analysis for a stock
+      description: Returns real-time daily analysis — what is moving the stock, buyer/seller pressure, analyst consensus
+      parameters:
+        - name: ticker
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Daily analysis
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DailyAnalysis"
+        "404":
+          description: Stock not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /stocks/{ticker}/deep-analysis:
     get:
       operationId: getStockDeepAnalysis
@@ -534,6 +566,171 @@ components:
         - losers
         - materiality
         - actionableInsights
+
+    DailyAnalysis:
+      type: object
+      properties:
+        ticker:
+          type: string
+        companyName:
+          type: string
+        marketState:
+          type: string
+          nullable: true
+        dailyMetrics:
+          $ref: "#/components/schemas/DailyMetrics"
+        technicalOutlook:
+          $ref: "#/components/schemas/TechnicalOutlook"
+          nullable: true
+        recentNews:
+          type: array
+          items:
+            $ref: "#/components/schemas/NewsItem"
+        sigDevs:
+          type: array
+          items:
+            $ref: "#/components/schemas/SigDev"
+        analystSummary:
+          $ref: "#/components/schemas/AnalystSummary"
+        aiAnalysis:
+          $ref: "#/components/schemas/DailyAiAnalysis"
+        generatedAt:
+          type: string
+      required:
+        - ticker
+        - companyName
+        - dailyMetrics
+        - recentNews
+        - sigDevs
+        - analystSummary
+        - aiAnalysis
+        - generatedAt
+
+    DailyMetrics:
+      type: object
+      properties:
+        price:
+          type: number
+        priceChangePercent:
+          type: number
+        volume:
+          type: number
+          nullable: true
+        avgVolume10d:
+          type: number
+          nullable: true
+        volumeRatio:
+          type: number
+          nullable: true
+        dayLow:
+          type: number
+          nullable: true
+        dayHigh:
+          type: number
+          nullable: true
+        pricePositionInRange:
+          type: number
+          nullable: true
+        shortPercentOfFloat:
+          type: number
+          nullable: true
+        shortRatio:
+          type: number
+          nullable: true
+        fiftyTwoWeekChangePercent:
+          type: number
+          nullable: true
+      required:
+        - price
+        - priceChangePercent
+
+    TechnicalOutlook:
+      type: object
+      properties:
+        direction:
+          type: string
+        stateDescription:
+          type: string
+        score:
+          type: number
+          nullable: true
+      required:
+        - direction
+        - stateDescription
+
+    NewsItem:
+      type: object
+      properties:
+        title:
+          type: string
+        publisher:
+          type: string
+          nullable: true
+        url:
+          type: string
+          nullable: true
+        publishedAt:
+          type: string
+          nullable: true
+      required:
+        - title
+
+    SigDev:
+      type: object
+      properties:
+        headline:
+          type: string
+        date:
+          type: string
+          nullable: true
+      required:
+        - headline
+
+    AnalystSummary:
+      type: object
+      properties:
+        recommendationKey:
+          type: string
+          nullable: true
+        targetMeanPrice:
+          type: number
+          nullable: true
+        numberOfAnalystOpinions:
+          type: number
+          nullable: true
+        strongBuy:
+          type: number
+        buy:
+          type: number
+        hold:
+          type: number
+        sell:
+          type: number
+        strongSell:
+          type: number
+      required:
+        - strongBuy
+        - buy
+        - hold
+        - sell
+        - strongSell
+
+    DailyAiAnalysis:
+      type: object
+      properties:
+        whatsMoving:
+          type: string
+        buyerSellerBalance:
+          type: string
+        analystView:
+          type: string
+        actionable:
+          type: string
+      required:
+        - whatsMoving
+        - buyerSellerBalance
+        - analystView
+        - actionable
 
     AnalystConsensus:
       type: object

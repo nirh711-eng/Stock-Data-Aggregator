@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { DeepAnalysis } from "@/components/DeepAnalysis";
+import { DailyAnalysis } from "@/components/DailyAnalysis";
 import { NotificationCenter } from "@/components/NotificationCenter";
 import { TradingViewChart } from "@/components/TradingViewChart";
 import { useWatchlist } from "@/hooks/useWatchlist";
@@ -440,10 +441,12 @@ export default function Home() {
           </div>
         )}
 
-        {/* Deep Analysis Section */}
+        {/* Daily Analysis + Deep Analysis */}
         {activeTicker && stockData && !isLoadingData && (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 delay-300">
             <Separator className="my-8" />
+            <DailyAnalysis ticker={activeTicker} />
+            <Separator className="my-6" />
             <DeepAnalysis ticker={activeTicker} />
           </div>
         )}
