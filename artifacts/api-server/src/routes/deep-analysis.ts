@@ -4,6 +4,7 @@ import yahooFinanceMod from "yahoo-finance2";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { GetStockDeepAnalysisParams } from "@workspace/api-zod";
 import { jsonrepair } from "jsonrepair";
+import { fetchFinnhub, fetchFmp, fetchFredMacro } from "../lib/enrichment";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const YahooFinance = yahooFinanceMod as any;
@@ -119,13 +120,16 @@ router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
   const upperTicker = ticker.toUpperCase();
 
   try {
-    // Fetch all in parallel — quoteSummary is one API call regardless of module count
-    const [quoteResult, qsResult, quarterlyData] = await Promise.all([
+    // Fetch all in parallel — Yahoo Finance + external enrichment sources
+    const [quoteResult, qsResult, quarterlyData, finnhubData, fmpData, fredData] = await Promise.all([
       yahooFinance.quote(upperTicker).catch(() => null),
       yahooFinance.quoteSummary(upperTicker, {
         modules: ["assetProfile", "financialData", "defaultKeyStatistics", "calendarEvents", "recommendationTrend", "upgradeDowngradeHistory", "earningsHistory", "earningsTrend"],
       }).catch(() => null),
       fetchQuarterlyTimeseries(upperTicker),
+      fetchFinnhub(upperTicker),
+      fetchFmp(upperTicker),
+      fetchFredMacro(),
     ]);
 
     if (!quoteResult) {
@@ -274,6 +278,24 @@ ${analystConsensus.recentActions.length > 0 ? "שינויי דירוג אחרו�
 
 --- תיאור עסקי ---
 ${profile?.longBusinessSummary ? profile.longBusinessSummary.slice(0, 300) : "N/A"}
+
+--- נתוני מאקרו (FRED / Federal Reserve) ---
+${fredData?.text ?? "  לא זמין"}
+
+--- חדשות אחרונות (Finnhub — 7 ימים) ---
+${finnhubData?.newsText ?? "  לא זמין"}
+
+--- עסקאות פנים אחרונות (Finnhub Insider Transactions) ---
+${finnhubData?.insiderText ?? "  לא זמין"}
+
+--- מתחרים ישירים ---
+${finnhubData?.peersText ?? "לא זמין"}
+
+--- דוחות רבעוניים (FMP — cross-validation) ---
+${fmpData?.incomeText ?? "  לא זמין"}
+
+--- מחזיקים מוסדיים גדולים (FMP) ---
+${fmpData?.holdersText ?? "  לא זמין"}
 `.trim();
 
     const systemPrompt = `אתה אנליסט בכיר במחלקת ניתוח עומק (Deep Research) של קרן גידור גלובלית מובילה.

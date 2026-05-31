@@ -3,6 +3,7 @@ import yahooFinanceMod from "yahoo-finance2";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { GetStockDailyAnalysisParams } from "@workspace/api-zod";
 import { jsonrepair } from "jsonrepair";
+import { fetchFinnhub, fetchTechnicals, fetchNewsSentiment, fetchMarketaux } from "../lib/enrichment";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const YahooFinance = yahooFinanceMod as any;
@@ -31,13 +32,16 @@ router.get("/stocks/:ticker/daily-analysis", async (req, res) => {
   const upperTicker = ticker.toUpperCase();
 
   try {
-    const [quoteResult, qsResult, insightsResult, searchResult] = await Promise.all([
+    const [quoteResult, qsResult, insightsResult, finnhubData, techData, sentimentData, marketauxData] = await Promise.all([
       yahooFinance.quote(upperTicker).catch(() => null),
       yahooFinance.quoteSummary(upperTicker, {
         modules: ["financialData", "defaultKeyStatistics", "recommendationTrend", "assetProfile", "calendarEvents", "earningsHistory"],
       }).catch(() => null),
       yahooFinance.insights(upperTicker).catch(() => null),
-      yahooFinance.search(upperTicker, { quotesCount: 0, newsCount: 6 }).catch(() => null),
+      fetchFinnhub(upperTicker),
+      fetchTechnicals(upperTicker),
+      fetchNewsSentiment(upperTicker),
+      fetchMarketaux(upperTicker),
     ]);
 
     if (!quoteResult) {
@@ -90,16 +94,11 @@ router.get("/stocks/:ticker/daily-analysis", async (req, res) => {
         }
       : null;
 
-    // Recent news
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const recentNews = ((searchResult as any)?.news ?? []).slice(0, 6).map((n: any) => ({
-      title: n.title ?? "",
-      publisher: n.publisher ?? null,
-      url: n.link ?? null,
-      publishedAt: n.providerPublishTime
-        ? new Date(n.providerPublishTime).toISOString()
-        : null,
-    }));
+    // Recent news — from Finnhub (replaces Yahoo Finance search)
+    const recentNews = (finnhubData?.newsText ?? "")
+      .split("\n")
+      .filter(Boolean)
+      .map(line => ({ title: line.replace(/^\s*-\s*/, ""), publisher: null, url: null, publishedAt: null }));
 
     // Significant developments
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -189,8 +188,18 @@ ${technicalOutlook ? `כיוון: ${technicalOutlook.direction} | ${technicalOut
 דוח הבא: ${earningsDateText}
 דוח אחרון (Beat/Miss): ${beatMissText}
 
---- חדשות אחרונות ---
-${recentNews.length > 0 ? recentNews.map((n: { title: string; publisher: string | null; publishedAt: string | null }) => `- ${n.title} (${n.publisher ?? ""})`).join("\n") : "אין חדשות"}
+--- אינדיקטורים טכניים (Twelve Data) ---
+${techData?.fullText ?? "לא זמין"}
+SMA50: $${(q.fiftyDayAverage ?? 0) > 0 ? (q.fiftyDayAverage as number).toFixed(2) : "N/A"} | SMA200: $${(q.twoHundredDayAverage ?? 0) > 0 ? (q.twoHundredDayAverage as number).toFixed(2) : "N/A"} | מחיר מול SMA50: ${q.regularMarketPrice && q.fiftyDayAverage ? ((q.regularMarketPrice / q.fiftyDayAverage - 1) * 100).toFixed(1) + "%" : "N/A"}
+
+--- חדשות אחרונות (Finnhub) ---
+${finnhubData?.newsText ?? "  אין חדשות"}
+
+--- עסקאות פנים אחרונות (Finnhub) ---
+${finnhubData?.insiderText ?? "  לא זמין"}
+
+--- סנטימנט חדשות (Alpha Vantage) ---
+${sentimentData ? `ציון כולל: ${sentimentData.overallLabel} (${sentimentData.overallScore?.toFixed(3) ?? "N/A"})\n${sentimentData.articlesText}` : marketauxData?.text ?? "  לא זמין"}
 
 --- התפתחויות משמעותיות ---
 ${sigDevs.length > 0 ? sigDevs.map((s: { headline: string; date: string | null }) => `- ${s.headline}`).join("\n") : "אין"}
