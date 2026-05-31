@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, TrendingUp, TrendingDown, Clock, Building2, Calendar, FileText, Activity, Star, RefreshCw, AlertTriangle, BarChart2, ArrowUpDown } from "lucide-react";
+import { Search, TrendingUp, TrendingDown, Clock, Building2, Calendar, FileText, Activity, Star, RefreshCw, AlertTriangle, BarChart2, ArrowUpDown, Layers } from "lucide-react";
 import { 
   useGetStockData, 
   useGetStockSummary, 
@@ -16,6 +16,7 @@ import { Separator } from "@/components/ui/separator";
 import { DeepAnalysis } from "@/components/DeepAnalysis";
 import { DailyAnalysis } from "@/components/DailyAnalysis";
 import { CompanyProfile } from "@/components/CompanyProfile";
+import { SectorExplorer } from "@/components/SectorExplorer";
 import { NotificationCenter } from "@/components/NotificationCenter";
 import { TradingViewChart } from "@/components/TradingViewChart";
 import { useWatchlist } from "@/hooks/useWatchlist";
@@ -57,6 +58,7 @@ const formatHebrewNumber = (num: number, options?: Intl.NumberFormatOptions) => 
 export default function Home() {
   const [searchInput, setSearchInput] = useState("");
   const [activeTicker, setActiveTicker] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"search" | "sectors">("search");
   const queryClient = useQueryClient();
 
   const {
@@ -102,6 +104,8 @@ export default function Home() {
   const selectTicker = (ticker: string) => {
     setSearchInput(ticker);
     setActiveTicker(ticker);
+    setActiveTab("search");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleRefresh = () => {
@@ -160,6 +164,50 @@ export default function Home() {
             />
           </div>
         </header>
+
+        {/* Tab Bar */}
+        <div className="flex items-center gap-1 border-b border-border pb-0 -mb-2">
+          <button
+            onClick={() => setActiveTab("search")}
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
+              ${activeTab === "search"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"}`}
+          >
+            <Search className="w-3.5 h-3.5" />
+            חיפוש מניה
+          </button>
+          <button
+            onClick={() => setActiveTab("sectors")}
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
+              ${activeTab === "sectors"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"}`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            סקטורים
+          </button>
+        </div>
+
+        {/* Sector Explorer Tab */}
+        {activeTab === "sectors" && (
+          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <Card className="bg-card border-border">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium flex items-center gap-2 text-muted-foreground">
+                  <Layers className="w-4 h-4" />
+                  סקטורים — חיפוש ומיון מניות
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <SectorExplorer onSelectTicker={selectTicker} />
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Search Tab content */}
+        {activeTab === "search" && <>
 
         {/* Empty State */}
         {!activeTicker && (
@@ -583,6 +631,8 @@ export default function Home() {
             <DeepAnalysis ticker={activeTicker} />
           </div>
         )}
+
+        </>}
 
       </div>
     </div>
