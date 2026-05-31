@@ -1,6 +1,7 @@
 import { Router } from "express";
 import yahooFinanceMod from "yahoo-finance2";
 import { openai } from "@workspace/integrations-openai-ai-server";
+import { jsonrepair } from "jsonrepair";
 import {
   GetStockDataParams,
   GetStockSummaryParams,
@@ -224,6 +225,68 @@ Focus on key strengths, risks, and what investors should watch.`;
   } catch (err) {
     req.log?.error({ err }, "Failed to generate summary");
     res.status(500).json({ error: "Internal server error", message: "Failed to generate AI summary" });
+  }
+});
+
+router.get("/stocks/:ticker/profile", async (req, res) => {
+  const parse = GetStockDataParams.safeParse(req.params);
+  if (!parse.success) {
+    res.status(400).json({ error: "Bad request", message: "Invalid ticker" });
+    return;
+  }
+
+  const { ticker } = parse.data;
+  const upperTicker = ticker.toUpperCase();
+
+  try {
+    const qsResult = await yahooFinance.quoteSummary(upperTicker, {
+      modules: ["assetProfile"],
+    }).catch(() => null);
+
+    const profile = qsResult?.assetProfile ?? null;
+    const description: string | null = profile?.longBusinessSummary ?? null;
+    const sector: string | null = profile?.sector ?? null;
+    const industry: string | null = profile?.industry ?? null;
+    const website: string | null = profile?.website ?? null;
+    const companyName: string = profile?.longName ?? upperTicker;
+    const country: string | null = profile?.country ?? null;
+    const employees: number | null = profile?.fullTimeEmployees ?? null;
+
+    type Agreement = { type: string; partner: string | null; description: string };
+    let agreements: Agreement[] = [];
+
+    if (description) {
+      try {
+        const response = await openai.chat.completions.create({
+          model: "gpt-5-mini",
+          max_completion_tokens: 4096,
+          messages: [
+            {
+              role: "system",
+              content: `מתוך תיאור העסק שיסופק לך, חלץ 4-6 הסכמים עסקיים פעילים מרכזיים, שותפויות, חוזי הפצה, הסכמי טכנולוגיה, לקוחות מרכזיים, או ספקים אסטרטגיים.
+החזר אך ורק מערך JSON תקני (ללא markdown, ללא טקסט נוסף) בפורמט:
+[{"type":"שם הסוג בעברית","partner":"שם השותף/חברה או null","description":"תיאור קצר בעברית שורה אחת"}]
+סוגים אפשריים: שותפות טכנולוגית, הסכם הפצה, הסכם ייצור, הסכם תוכן, לקוח אסטרטגי, ספק מרכזי, הסכם רישוי, אחר.
+אל תשתמש בגרשיים כפולים בתוך ערכי הטקסט.`,
+            },
+            {
+              role: "user",
+              content: `חברה: ${upperTicker}\n${description.slice(0, 1200)}`,
+            },
+          ],
+        });
+        const content = response.choices[0]?.message?.content ?? "[]";
+        const parsed = JSON.parse(jsonrepair(content));
+        if (Array.isArray(parsed)) agreements = parsed.slice(0, 6) as Agreement[];
+      } catch {
+        agreements = [];
+      }
+    }
+
+    res.json({ ticker: upperTicker, companyName, description, sector, industry, website, country, employees, agreements, generatedAt: new Date().toISOString() });
+  } catch (err) {
+    req.log?.error({ err }, "Failed to fetch company profile");
+    res.status(500).json({ error: "Internal server error", message: "Failed to fetch company profile" });
   }
 });
 

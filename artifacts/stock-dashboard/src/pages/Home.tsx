@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { DeepAnalysis } from "@/components/DeepAnalysis";
 import { DailyAnalysis } from "@/components/DailyAnalysis";
+import { CompanyProfile } from "@/components/CompanyProfile";
 import { NotificationCenter } from "@/components/NotificationCenter";
 import { TradingViewChart } from "@/components/TradingViewChart";
 import { useWatchlist } from "@/hooks/useWatchlist";
@@ -483,6 +484,17 @@ export default function Home() {
                     )}
                   </CardContent>
                 </Card>
+
+                {/* Company Profile */}
+                <CompanyProfile
+                  ticker={activeTicker}
+                  stockData={{
+                    description: stockData.description ?? null,
+                    sector: stockData.sector ?? null,
+                    industry: stockData.industry ?? null,
+                    companyName: stockData.companyName,
+                  }}
+                />
               </div>
 
               {/* Sidebar Column */}
