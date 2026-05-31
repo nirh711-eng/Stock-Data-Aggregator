@@ -34,7 +34,7 @@ router.get("/stocks/:ticker/daily-analysis", async (req, res) => {
     const [quoteResult, qsResult, insightsResult, searchResult] = await Promise.all([
       yahooFinance.quote(upperTicker).catch(() => null),
       yahooFinance.quoteSummary(upperTicker, {
-        modules: ["financialData", "defaultKeyStatistics", "recommendationTrend", "assetProfile"],
+        modules: ["financialData", "defaultKeyStatistics", "recommendationTrend", "assetProfile", "calendarEvents", "earningsHistory"],
       }).catch(() => null),
       yahooFinance.insights(upperTicker).catch(() => null),
       yahooFinance.search(upperTicker, { quotesCount: 0, newsCount: 6 }).catch(() => null),
@@ -122,6 +122,38 @@ router.get("/stocks/:ticker/daily-analysis", async (req, res) => {
       strongSell: recTrend?.strongSell ?? 0,
     };
 
+    // Calendar — next earnings date
+    const earningsDates = qs?.calendarEvents?.earnings?.earningsDate ?? [];
+    const nextEarnings = earningsDates[0] instanceof Date ? earningsDates[0] : (earningsDates[0] ? new Date(earningsDates[0]) : null);
+    const daysToEarnings = nextEarnings ? Math.ceil((nextEarnings.getTime() - Date.now()) / 86400000) : null;
+    const earningsDateText = nextEarnings
+      ? `${nextEarnings.toISOString().slice(0, 10)} (בעוד ${daysToEarnings} ימים)`
+      : "לא ידוע";
+
+    // Most recent earnings beat/miss
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const earningsHist: any[] = qs?.earningsHistory?.history ?? [];
+    const lastEarnings = earningsHist[earningsHist.length - 1] ?? null;
+    const beatMissText = lastEarnings
+      ? (() => {
+          const actual = lastEarnings.epsActual;
+          const est = lastEarnings.epsEstimate;
+          const surp = lastEarnings.surprisePercent;
+          const result = surp != null ? (surp > 0.005 ? "BEAT" : surp < -0.005 ? "MISS" : "IN-LINE") : "?";
+          return `${result}: צפוי $${est?.toFixed(2) ?? "?"} | בפועל $${actual?.toFixed(2) ?? "?"} (${surp != null ? (surp > 0 ? "+" : "") + (surp * 100).toFixed(1) + "%" : "?"})`;
+        })()
+      : "לא זמין";
+
+    // 52wk metrics
+    const fw52High = q.fiftyTwoWeekHigh ?? null;
+    const fw52Low = q.fiftyTwoWeekLow ?? null;
+    const distFromHigh = fw52High ? ((price / fw52High - 1) * 100).toFixed(1) + "%" : "N/A";
+    const distFromLow = fw52Low ? ((price / fw52Low - 1) * 100).toFixed(1) + "%" : "N/A";
+
+    // Analyst upside
+    const targetMean = qs?.financialData?.targetMeanPrice ?? null;
+    const analystUpside = targetMean ? ((targetMean / price - 1) * 100).toFixed(1) + "%" : "N/A";
+
     // Build context for AI
     const volRatioPct = volumeRatio != null ? (volumeRatio * 100).toFixed(0) + "% מהממוצע" : "N/A";
     const priceInRange = pricePositionInRange != null
@@ -130,21 +162,32 @@ router.get("/stocks/:ticker/daily-analysis", async (req, res) => {
     const totalAnalysts = analystSummary.strongBuy + analystSummary.buy + analystSummary.hold + analystSummary.sell + analystSummary.strongSell;
     const bullPct = totalAnalysts > 0 ? (((analystSummary.strongBuy + analystSummary.buy) / totalAnalysts) * 100).toFixed(0) : "0";
 
+    // Pre/post market
+    const preMarketLine = q.preMarketPrice != null
+      ? `Pre-Market: $${q.preMarketPrice.toFixed(2)} (${q.preMarketChangePercent != null ? (q.preMarketChangePercent >= 0 ? "+" : "") + q.preMarketChangePercent.toFixed(2) + "%" : "N/A"})`
+      : "";
+    const postMarketLine = q.postMarketPrice != null
+      ? `After-Hours: $${q.postMarketPrice.toFixed(2)} (${q.postMarketChangePercent != null ? (q.postMarketChangePercent >= 0 ? "+" : "") + q.postMarketChangePercent.toFixed(2) + "%" : "N/A"})`
+      : "";
+
     const dataContext = `
 חברה: ${companyName} (${upperTicker}) | סקטור: ${qs?.assetProfile?.sector ?? "N/A"}
 תאריך: ${new Date().toLocaleDateString("he-IL", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
 מצב שוק: ${q.marketState ?? "N/A"}
-
+${preMarketLine ? preMarketLine + "\n" : ""}${postMarketLine ? postMarketLine + "\n" : ""}
 --- נתוני מסחר יומיים ---
 מחיר: $${price.toFixed(2)} | שינוי: ${dailyMetrics.priceChangePercent >= 0 ? "+" : ""}${dailyMetrics.priceChangePercent.toFixed(2)}%
-טווח יום: $${dayLow?.toFixed(2)} - $${dayHigh?.toFixed(2)}
-מיקום מחיר בטווח: ${priceInRange}
-נפח: ${volume != null ? (volume / 1e6).toFixed(1) + "M" : "N/A"} | ממוצע 10 ימים: ${avgVolume10d != null ? (avgVolume10d / 1e6).toFixed(1) + "M" : "N/A"}
-יחס נפח (נוכחי/ממוצע): ${volRatioPct}
+טווח יום: $${dayLow?.toFixed(2)} - $${dayHigh?.toFixed(2)} | מיקום מחיר בטווח: ${priceInRange}
+נפח: ${volume != null ? (volume / 1e6).toFixed(1) + "M" : "N/A"} | ממוצע 10 ימים: ${avgVolume10d != null ? (avgVolume10d / 1e6).toFixed(1) + "M" : "N/A"} | יחס נפח: ${volRatioPct}
+52W High: $${fw52High?.toFixed(2) ?? "N/A"} | מרחק מה-52W High: ${distFromHigh} | 52W Low: $${fw52Low?.toFixed(2) ?? "N/A"} | עלייה מה-52W Low: ${distFromLow}
 Short Interest: ${dailyMetrics.shortPercentOfFloat != null ? (dailyMetrics.shortPercentOfFloat * 100).toFixed(1) + "%" : "N/A"} | Short Ratio: ${dailyMetrics.shortRatio?.toFixed(1) ?? "N/A"} ימים
 
 --- כיוון טכני (Trading Central) ---
 ${technicalOutlook ? `כיוון: ${technicalOutlook.direction} | ${technicalOutlook.stateDescription}` : "לא זמין"}
+
+--- דוח קרוב ---
+דוח הבא: ${earningsDateText}
+דוח אחרון (Beat/Miss): ${beatMissText}
 
 --- חדשות אחרונות ---
 ${recentNews.length > 0 ? recentNews.map((n: { title: string; publisher: string | null; publishedAt: string | null }) => `- ${n.title} (${n.publisher ?? ""})`).join("\n") : "אין חדשות"}
@@ -153,8 +196,8 @@ ${recentNews.length > 0 ? recentNews.map((n: { title: string; publisher: string 
 ${sigDevs.length > 0 ? sigDevs.map((s: { headline: string; date: string | null }) => `- ${s.headline}`).join("\n") : "אין"}
 
 --- קונצנזוס אנליסטים ---
-המלצה: ${analystSummary.recommendationKey ?? "N/A"} | מחיר יעד: $${analystSummary.targetMeanPrice?.toFixed(2) ?? "N/A"} (${analystSummary.numberOfAnalystOpinions ?? 0} אנליסטים)
-קנייה: ${bullPct}% | Hold: ${totalAnalysts > 0 ? ((analystSummary.hold / totalAnalysts) * 100).toFixed(0) : 0}% | מכירה: ${totalAnalysts > 0 ? (((analystSummary.sell + analystSummary.strongSell) / totalAnalysts) * 100).toFixed(0) : 0}%
+המלצה: ${analystSummary.recommendationKey ?? "N/A"} | מחיר יעד: $${analystSummary.targetMeanPrice?.toFixed(2) ?? "N/A"} | upside/downside: ${analystUpside}
+מספר אנליסטים: ${analystSummary.numberOfAnalystOpinions ?? 0} | קנייה: ${bullPct}% | Hold: ${totalAnalysts > 0 ? ((analystSummary.hold / totalAnalysts) * 100).toFixed(0) : 0}% | מכירה: ${totalAnalysts > 0 ? (((analystSummary.sell + analystSummary.strongSell) / totalAnalysts) * 100).toFixed(0) : 0}%
 `.trim();
 
     const systemPrompt = `אתה אנליסט יומי בחדר מסחר מוסדי. תפקידך: לנתח מה קורה עם מניה ספציפית היום, בצורה ישירה וחדה.

@@ -30,6 +30,8 @@ interface QuarterlyData {
   netIncome: number | null;
   grossProfit: number | null;
   dilutedEPS: number | null;
+  freeCashFlow: number | null;
+  operatingCashFlow: number | null;
 }
 
 function fetchQuarterlyTimeseries(ticker: string): Promise<QuarterlyData[]> {
@@ -41,6 +43,8 @@ function fetchQuarterlyTimeseries(ticker: string): Promise<QuarterlyData[]> {
       "quarterlyNetIncome",
       "quarterlyGrossProfit",
       "quarterlyDilutedEPS",
+      "quarterlyFreeCashFlow",
+      "quarterlyOperatingCashFlow",
     ].join(",");
     const url = `https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${ticker}?type=${encodeURIComponent(types)}&period1=${period1}&period2=${period2}&merge=false`;
 
@@ -52,10 +56,10 @@ function fetchQuarterlyTimeseries(ticker: string): Promise<QuarterlyData[]> {
           const json = JSON.parse(data);
           const results: unknown[] = json?.timeseries?.result ?? [];
 
-          const byDate = new Map<string, Partial<Record<"revenue" | "netIncome" | "grossProfit" | "dilutedEPS", number>>>();
+          const byDate = new Map<string, Partial<Record<"revenue" | "netIncome" | "grossProfit" | "dilutedEPS" | "freeCashFlow" | "operatingCashFlow", number>>>();
 
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const extract = (series: any[], field: "revenue" | "netIncome" | "grossProfit" | "dilutedEPS") => {
+          const extract = (series: any[], field: "revenue" | "netIncome" | "grossProfit" | "dilutedEPS" | "freeCashFlow" | "operatingCashFlow") => {
             for (const item of series) {
               const date: string = item.asOfDate;
               if (!byDate.has(date)) byDate.set(date, {});
@@ -69,6 +73,8 @@ function fetchQuarterlyTimeseries(ticker: string): Promise<QuarterlyData[]> {
             if (Array.isArray(r.quarterlyNetIncome)) extract(r.quarterlyNetIncome, "netIncome");
             if (Array.isArray(r.quarterlyGrossProfit)) extract(r.quarterlyGrossProfit, "grossProfit");
             if (Array.isArray(r.quarterlyDilutedEPS)) extract(r.quarterlyDilutedEPS, "dilutedEPS");
+            if (Array.isArray(r.quarterlyFreeCashFlow)) extract(r.quarterlyFreeCashFlow, "freeCashFlow");
+            if (Array.isArray(r.quarterlyOperatingCashFlow)) extract(r.quarterlyOperatingCashFlow, "operatingCashFlow");
           }
 
           const sorted: QuarterlyData[] = Array.from(byDate.entries())
@@ -79,6 +85,8 @@ function fetchQuarterlyTimeseries(ticker: string): Promise<QuarterlyData[]> {
               netIncome: vals.netIncome ?? null,
               grossProfit: vals.grossProfit ?? null,
               dilutedEPS: vals.dilutedEPS ?? null,
+              freeCashFlow: vals.freeCashFlow ?? null,
+              operatingCashFlow: vals.operatingCashFlow ?? null,
             }));
 
           resolve(sorted);
@@ -111,11 +119,11 @@ router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
   const upperTicker = ticker.toUpperCase();
 
   try {
-    // Fetch Yahoo Finance data + quarterly timeseries in parallel
+    // Fetch all in parallel — quoteSummary is one API call regardless of module count
     const [quoteResult, qsResult, quarterlyData] = await Promise.all([
       yahooFinance.quote(upperTicker).catch(() => null),
       yahooFinance.quoteSummary(upperTicker, {
-        modules: ["assetProfile", "financialData", "defaultKeyStatistics", "calendarEvents", "recommendationTrend", "upgradeDowngradeHistory"],
+        modules: ["assetProfile", "financialData", "defaultKeyStatistics", "calendarEvents", "recommendationTrend", "upgradeDowngradeHistory", "earningsHistory", "earningsTrend"],
       }).catch(() => null),
       fetchQuarterlyTimeseries(upperTicker),
     ]);
@@ -137,7 +145,7 @@ router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
     const recTrend = qs?.recommendationTrend?.trend?.[0] ?? null;
     const upgradeHistory: unknown[] = qs?.upgradeDowngradeHistory?.history ?? [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const recentActions = upgradeHistory.slice(0, 8).map((h: any) => ({
+    const recentActions = upgradeHistory.slice(0, 5).map((h: any) => ({
       date: h.epochGradeDate instanceof Date
         ? h.epochGradeDate.toISOString().split("T")[0]
         : typeof h.epochGradeDate === "string"
@@ -178,15 +186,47 @@ router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
       ? ((latestQ.netIncome / prevQ.netIncome - 1) * 100).toFixed(1) + "%"
       : "N/A";
 
-    const quartersTable = quarterlyData.length > 0
-      ? quarterlyData.map(qd => {
-        const revVsPrev = quarterlyData.indexOf(qd) > 0
-          ? ((qd.revenue ?? 0) / (quarterlyData[quarterlyData.indexOf(qd) - 1].revenue ?? 1) - 1 * 100)
-          : null;
-        void revVsPrev;
-        return `  ${qd.date}: הכנסות=${formatNum(qd.revenue)}, רווח נקי=${formatNum(qd.netIncome)}, רווח גולמי=${formatNum(qd.grossProfit)}, EPS=${qd.dilutedEPS?.toFixed(2) ?? "N/A"}`;
-      }).join("\n")
-      : "  אין נתוני רבעונים זמינים ממקור נתונים";
+    // Use last 4 quarters only to keep prompt concise
+    const recentQuarters = quarterlyData.slice(-4);
+    const quartersTable = recentQuarters.length > 0
+      ? recentQuarters.map(qd => {
+          const fcfMargin = (qd.freeCashFlow != null && qd.revenue != null && qd.revenue > 0)
+            ? ` FCF%=${((qd.freeCashFlow / qd.revenue) * 100).toFixed(1)}%`
+            : "";
+          return `  ${qd.date}: Rev=${formatNum(qd.revenue)} NI=${formatNum(qd.netIncome)} GP=${formatNum(qd.grossProfit)} EPS=$${qd.dilutedEPS?.toFixed(2) ?? "N/A"} FCF=${formatNum(qd.freeCashFlow)}${fcfMargin}`;
+        }).join("\n")
+      : "  אין נתוני רבעונים";
+
+    // Earnings beat/miss history
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const earningsHist: any[] = qs?.earningsHistory?.history ?? [];
+    const earningsHistText = earningsHist.length > 0
+      ? earningsHist.slice(-4).map((e: any) => {
+          const surprise = e.surprisePercent != null ? ` (${e.surprisePercent > 0 ? "+" : ""}${(e.surprisePercent * 100).toFixed(1)}%)` : "";
+          const beat = e.surprisePercent != null ? (e.surprisePercent > 0 ? "✓ BEAT" : e.surprisePercent < -0.005 ? "✗ MISS" : "~ IN-LINE") : "";
+          return `  ${e.quarter?.toISOString?.()?.slice(0, 10) ?? e.period ?? "?"}: צפוי $${e.epsEstimate?.toFixed(2) ?? "?"} | בפועל $${e.epsActual?.toFixed(2) ?? "?"}${surprise} ${beat}`;
+        }).join("\n")
+      : "  לא זמין";
+
+    // Earnings estimates (next quarter, next year)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const earningsTrendData: any[] = qs?.earningsTrend?.trend ?? [];
+    const nextQTrend = earningsTrendData.find((t: any) => t.period === "0q" || t.period === "+1q");
+    const nextYTrend = earningsTrendData.find((t: any) => t.period === "+1y");
+    const estimatesText = nextQTrend
+      ? `רבעון הבא: EPS צפוי $${nextQTrend.earningsEstimate?.avg?.toFixed(2) ?? "N/A"} (Low $${nextQTrend.earningsEstimate?.low?.toFixed(2) ?? "?"} / High $${nextQTrend.earningsEstimate?.high?.toFixed(2) ?? "?"}) | הכנסות צפויות ${formatNum(nextQTrend.revenueEstimate?.avg ?? null)} | צמיחה ${pct(nextQTrend.growth)}`
+      : "לא זמין";
+    const nextYearText = nextYTrend
+      ? `שנה הבאה (TTM): EPS צפוי $${nextYTrend.earningsEstimate?.avg?.toFixed(2) ?? "N/A"} | צמיחה ${pct(nextYTrend.growth)}`
+      : "";
+
+    // Calendar — next earnings date
+    const earningsDates = qs?.calendarEvents?.earnings?.earningsDate ?? [];
+    const nextEarnings = earningsDates[0] instanceof Date ? earningsDates[0] : (earningsDates[0] ? new Date(earningsDates[0]) : null);
+    const daysToEarnings = nextEarnings ? Math.ceil((nextEarnings.getTime() - Date.now()) / 86400000) : null;
+    const earningsDateText = nextEarnings
+      ? `${nextEarnings.toISOString().slice(0, 10)} (בעוד ${daysToEarnings} ימים)`
+      : "לא ידוע";
 
     const dataContext = `
 חברה: ${companyName} (${upperTicker})
@@ -195,44 +235,45 @@ router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
 
 --- נתוני שוק עדכניים ---
 מחיר: $${q.regularMarketPrice?.toFixed(2)} | שינוי יומי: ${q.regularMarketChangePercent?.toFixed(2)}%
-שווי שוק: ${formatNum(q.marketCap)}
-P/E trailing: ${q.trailingPE?.toFixed(1) ?? "N/A"} | P/E forward: ${q.forwardPE?.toFixed(1) ?? "N/A"}
+שווי שוק: ${formatNum(q.marketCap)} | Enterprise Value: ${formatNum(keyStats?.enterpriseValue)}
+P/E trailing: ${q.trailingPE?.toFixed(1) ?? "N/A"} | P/E forward: ${q.forwardPE?.toFixed(1) ?? "N/A"} | PEG: ${keyStats?.pegRatio?.toFixed(2) ?? "N/A"}
 EPS TTM: $${q.epsTrailingTwelveMonths?.toFixed(2) ?? "N/A"} | EPS forward: $${q.epsForward?.toFixed(2) ?? "N/A"}
-P/S: ${keyStats?.priceToSalesRatioTTM?.toFixed(2) ?? "N/A"} | P/B: ${keyStats?.priceToBook?.toFixed(2) ?? "N/A"}
+P/S: ${keyStats?.priceToSalesRatioTTM?.toFixed(2) ?? "N/A"} | P/B: ${keyStats?.priceToBook?.toFixed(2) ?? "N/A"} | EV/Revenue: ${keyStats?.enterpriseToRevenue?.toFixed(2) ?? "N/A"} | EV/EBITDA: ${keyStats?.enterpriseToEbitda?.toFixed(2) ?? "N/A"}
 Beta: ${keyStats?.beta?.toFixed(2) ?? "N/A"}
-52W High: $${q.fiftyTwoWeekHigh?.toFixed(2) ?? "N/A"} | 52W Low: $${q.fiftyTwoWeekLow?.toFixed(2) ?? "N/A"}
+52W High: $${q.fiftyTwoWeekHigh?.toFixed(2) ?? "N/A"} | 52W Low: $${q.fiftyTwoWeekLow?.toFixed(2) ?? "N/A"} | מרחק מה-52W High: ${q.regularMarketPrice && q.fiftyTwoWeekHigh ? ((q.regularMarketPrice / q.fiftyTwoWeekHigh - 1) * 100).toFixed(1) + "%" : "N/A"}
+אחזקות: Insiders ${pct(keyStats?.heldPercentInsiders)} | מוסדיים ${pct(keyStats?.heldPercentInstitutions)}
 
 --- נתונים פיננסיים (TTM) ---
 הכנסות TTM: ${formatNum(financials?.totalRevenue)}
-EBITDA: ${formatNum(financials?.ebitda)}
-שולי רווח גולמי: ${pct(financials?.grossMargins)}
-שולי EBITDA: ${pct(financials?.ebitdaMargins)}
-שולי רווח תפעולי: ${pct(financials?.operatingMargins)}
-שולי רווח נקי: ${pct(financials?.profitMargins)}
-צמיחת הכנסות YoY: ${pct(financials?.revenueGrowth)}
-צמיחת רווח YoY: ${pct(financials?.earningsGrowth)}
+EBITDA: ${formatNum(financials?.ebitda)} | FCF TTM: ${formatNum(financials?.freeCashflow)} | OCF TTM: ${formatNum(financials?.operatingCashflow)}
+FCF Margin: ${financials?.freeCashflow && financials?.totalRevenue ? ((financials.freeCashflow / financials.totalRevenue) * 100).toFixed(1) + "%" : "N/A"}
+שולי רווח גולמי: ${pct(financials?.grossMargins)} | שולי EBITDA: ${pct(financials?.ebitdaMargins)}
+שולי רווח תפעולי: ${pct(financials?.operatingMargins)} | שולי רווח נקי: ${pct(financials?.profitMargins)}
+צמיחת הכנסות YoY: ${pct(financials?.revenueGrowth)} | צמיחת רווח YoY: ${pct(financials?.earningsGrowth)}
 ROE: ${pct(financials?.returnOnEquity)} | ROA: ${pct(financials?.returnOnAssets)}
-מזומן: ${formatNum(financials?.totalCash)} | חוב: ${formatNum(financials?.totalDebt)}
-יחס חוב/הון: ${financials?.debtToEquity?.toFixed(2) ?? "N/A"}
+מזומן: ${formatNum(financials?.totalCash)} | חוב: ${formatNum(financials?.totalDebt)} | D/E: ${financials?.debtToEquity?.toFixed(2) ?? "N/A"}
 
---- ביצועים רבעוניים (נתוני Yahoo Finance Timeseries — 5 רבעונים אחרונים) ---
+--- ביצועים רבעוניים (4 רבעונים + FCF) ---
 ${quartersTable}
+שינוי QoQ (הכנסות): ${revGrowthQoQ} | שינוי QoQ (רווח נקי): ${niGrowthQoQ}
 
---- השוואת שני רבעונים אחרונים ---
-רבעון אחרון (${latestQ?.date ?? "N/A"}):
-  הכנסות: ${formatNum(latestQ?.revenue)} | רווח נקי: ${formatNum(latestQ?.netIncome)} | EPS: $${latestQ?.dilutedEPS?.toFixed(2) ?? "N/A"}
-רבעון קודם (${prevQ?.date ?? "N/A"}):
-  הכנסות: ${formatNum(prevQ?.revenue)} | רווח נקי: ${formatNum(prevQ?.netIncome)} | EPS: $${prevQ?.dilutedEPS?.toFixed(2) ?? "N/A"}
-שינוי QoQ: הכנסות ${revGrowthQoQ} | רווח נקי ${niGrowthQoQ}
+--- היסטוריית דוחות (Beat/Miss — 4 רבעונים אחרונים) ---
+${earningsHistText}
+
+--- תחזיות קונצנזוס ---
+${estimatesText}
+${nextYearText}
+דוח הבא: ${earningsDateText}
 
 --- ציפיות אנליסטים ---
 קונצנזוס: ${analystConsensus.recommendationKey ?? "N/A"} | מספר אנליסטים: ${analystConsensus.numberOfAnalystOpinions ?? "N/A"}
 מחיר יעד ממוצע: $${analystConsensus.targetMeanPrice?.toFixed(2) ?? "N/A"} | גבוה: $${analystConsensus.targetHighPrice?.toFixed(2) ?? "N/A"} | נמוך: $${analystConsensus.targetLowPrice?.toFixed(2) ?? "N/A"}
+upside/downside למחיר יעד: ${analystConsensus.targetMeanPrice && q.regularMarketPrice ? ((analystConsensus.targetMeanPrice / q.regularMarketPrice - 1) * 100).toFixed(1) + "%" : "N/A"}
 דירוגים (חודש אחרון): Strong Buy=${analystConsensus.strongBuy} | Buy=${analystConsensus.buy} | Hold=${analystConsensus.hold} | Sell=${analystConsensus.sell} | Strong Sell=${analystConsensus.strongSell}
 ${analystConsensus.recentActions.length > 0 ? "שינויי דירוג אחרונים:\n" + analystConsensus.recentActions.map(a => `  ${a.date}: ${a.firm} — ${a.fromGrade ? a.fromGrade + " → " : ""}${a.toGrade}${a.currentPriceTarget ? ` (PT: $${a.currentPriceTarget})` : ""}`).join("\n") : ""}
 
 --- תיאור עסקי ---
-${profile?.longBusinessSummary ? profile.longBusinessSummary.slice(0, 800) : "N/A"}
+${profile?.longBusinessSummary ? profile.longBusinessSummary.slice(0, 300) : "N/A"}
 `.trim();
 
     const systemPrompt = `אתה אנליסט בכיר במחלקת ניתוח עומק (Deep Research) של קרן גידור גלובלית מובילה.
