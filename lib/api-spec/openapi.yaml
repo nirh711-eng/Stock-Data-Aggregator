@@ -282,6 +282,40 @@ components:
         postMarketChangePercent:
           type: number
           nullable: true
+        regularMarketTime:
+          type: string
+          nullable: true
+          description: ISO timestamp of the last market price update from exchange
+        fetchedAt:
+          type: string
+          description: ISO timestamp of when the server fetched this data
+        volume:
+          type: number
+          nullable: true
+        averageVolume:
+          type: number
+          nullable: true
+        dayHigh:
+          type: number
+          nullable: true
+        dayLow:
+          type: number
+          nullable: true
+        fiftyTwoWeekHigh:
+          type: number
+          nullable: true
+        fiftyTwoWeekLow:
+          type: number
+          nullable: true
+        bid:
+          type: number
+          nullable: true
+        ask:
+          type: number
+          nullable: true
+        dividendYield:
+          type: number
+          nullable: true
       required:
         - ticker
         - companyName
@@ -294,6 +328,7 @@ components:
         - upcomingEvents
         - currency
         - exchange
+        - fetchedAt
 
     QuarterlyReport:
       type: object

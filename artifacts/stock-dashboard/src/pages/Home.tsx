@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { Search, TrendingUp, TrendingDown, Clock, Building2, Calendar, FileText, Activity, Star, RefreshCw } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Search, TrendingUp, TrendingDown, Clock, Building2, Calendar, FileText, Activity, Star, RefreshCw, AlertTriangle, BarChart2, ArrowUpDown } from "lucide-react";
 import { 
   useGetStockData, 
   useGetStockSummary, 
@@ -20,6 +20,34 @@ import { TradingViewChart } from "@/components/TradingViewChart";
 import { useWatchlist } from "@/hooks/useWatchlist";
 
 const POPULAR_TICKERS = ["AAPL", "TSLA", "NVDA", "MSFT"];
+
+function useTimeSince(isoString: string | null | undefined): string {
+  const [label, setLabel] = useState("");
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (!isoString) { setLabel(""); return; }
+    const update = () => {
+      const diff = Math.floor((Date.now() - new Date(isoString).getTime()) / 1000);
+      if (diff < 60) setLabel(`לפני ${diff} שניות`);
+      else if (diff < 3600) setLabel(`לפני ${Math.floor(diff / 60)} דקות`);
+      else setLabel(`לפני ${Math.floor(diff / 3600)} שעות`);
+    };
+    update();
+    timerRef.current = setInterval(update, 10000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [isoString]);
+
+  return label;
+}
+
+function formatVolume(v: number | null | undefined): string {
+  if (v == null) return "—";
+  if (v >= 1e9) return `${(v / 1e9).toFixed(2)}B`;
+  if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
+  if (v >= 1e3) return `${(v / 1e3).toFixed(0)}K`;
+  return String(v);
+}
 
 const formatHebrewNumber = (num: number, options?: Intl.NumberFormatOptions) => {
   return new Intl.NumberFormat("he-IL", options).format(num);
@@ -92,6 +120,7 @@ export default function Home() {
   };
 
   const watched = activeTicker ? isWatched(activeTicker) : false;
+  const timeSinceMarket = useTimeSince(stockData?.regularMarketTime);
 
   return (
     <div className="min-h-screen bg-background text-foreground font-sans p-4 md:p-6 lg:p-8">
@@ -295,6 +324,25 @@ export default function Home() {
               </div>
             </div>
 
+            {/* Data Freshness Bar */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground/50 px-1">
+              <span className="flex items-center gap-1.5">
+                <Clock className="w-3 h-3" />
+                {stockData.regularMarketTime
+                  ? <>עדכון אחרון בבורסה: <span className="font-mono text-muted-foreground/70">{new Date(stockData.regularMarketTime).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", timeZoneName: "short" })}</span></>
+                  : "עדכון אחרון: N/A"
+                }
+                {timeSinceMarket && <span className="text-muted-foreground/40">({timeSinceMarket})</span>}
+              </span>
+              <span className="text-muted-foreground/30">·</span>
+              <span>מקור: Yahoo Finance</span>
+              <span className="text-muted-foreground/30">·</span>
+              <span className="flex items-center gap-1 text-yellow-500/50">
+                <AlertTriangle className="w-3 h-3" />
+                נתונים עשויים להיות מעוכבים עד 15 דקות בשוק פתוח
+              </span>
+            </div>
+
             {/* TradingView Chart — Full Width */}
             <div className="w-full rounded-xl overflow-hidden border border-border shadow-lg">
               <div className="flex items-center justify-between px-4 py-2 bg-card border-b border-border">
@@ -307,30 +355,103 @@ export default function Home() {
               <TradingViewChart ticker={activeTicker} height={650} />
             </div>
 
-            {/* Key Metrics Strip */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            {/* Key Metrics Strip — Row 1 */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <Card className="bg-card border-card-border">
                 <CardContent className="p-4">
-                  <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">Market Cap</div>
-                  <div className="text-lg font-mono font-medium">{stockData.marketCapFormatted}</div>
+                  <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider flex items-center gap-1">
+                    <Building2 className="w-3 h-3" /> Market Cap
+                  </div>
+                  <div className="text-lg font-mono font-semibold">{stockData.marketCapFormatted}</div>
                 </CardContent>
               </Card>
               <Card className="bg-card border-card-border">
                 <CardContent className="p-4">
-                  <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">P/E Ratio</div>
-                  <div className="text-lg font-mono font-medium">{stockData.peRatio ? formatHebrewNumber(stockData.peRatio, { maximumFractionDigits: 2 }) : '-'}</div>
+                  <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">P/E (TTM)</div>
+                  <div className="text-lg font-mono font-semibold">{stockData.peRatio ? formatHebrewNumber(stockData.peRatio, { maximumFractionDigits: 2 }) : '—'}</div>
                 </CardContent>
               </Card>
               <Card className="bg-card border-card-border">
                 <CardContent className="p-4">
-                  <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">EPS</div>
-                  <div className="text-lg font-mono font-medium">{stockData.eps ? formatHebrewNumber(stockData.eps, { maximumFractionDigits: 2 }) : '-'}</div>
+                  <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">EPS (TTM)</div>
+                  <div className="text-lg font-mono font-semibold">{stockData.eps != null ? `$${stockData.eps.toFixed(2)}` : '—'}</div>
                 </CardContent>
               </Card>
               <Card className="bg-card border-card-border">
                 <CardContent className="p-4">
-                  <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">Industry</div>
-                  <div className="text-sm font-medium truncate" title={stockData.industry || '-'}>{stockData.industry || '-'}</div>
+                  <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider flex items-center gap-1">
+                    <BarChart2 className="w-3 h-3" /> Volume
+                  </div>
+                  <div className="text-lg font-mono font-semibold">{formatVolume(stockData.volume)}</div>
+                  {stockData.averageVolume != null && (
+                    <div className="text-xs text-muted-foreground/50 mt-0.5 font-mono">avg {formatVolume(stockData.averageVolume)}</div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Key Metrics Strip — Row 2 */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <Card className="bg-card border-card-border">
+                <CardContent className="p-4">
+                  <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider flex items-center gap-1">
+                    <ArrowUpDown className="w-3 h-3" /> Day Range
+                  </div>
+                  {stockData.dayLow != null && stockData.dayHigh != null ? (
+                    <>
+                      <div className="text-sm font-mono font-semibold">
+                        ${stockData.dayLow.toFixed(2)} – ${stockData.dayHigh.toFixed(2)}
+                      </div>
+                      <div className="mt-1.5 h-1 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-primary/60 rounded-full"
+                          style={{ width: `${Math.min(100, ((stockData.price - stockData.dayLow) / (stockData.dayHigh - stockData.dayLow)) * 100)}%` }}
+                        />
+                      </div>
+                    </>
+                  ) : <div className="text-sm font-mono">—</div>}
+                </CardContent>
+              </Card>
+              <Card className="bg-card border-card-border">
+                <CardContent className="p-4">
+                  <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">52-Week Range</div>
+                  {stockData.fiftyTwoWeekLow != null && stockData.fiftyTwoWeekHigh != null ? (
+                    <>
+                      <div className="text-sm font-mono font-semibold">
+                        ${stockData.fiftyTwoWeekLow.toFixed(2)} – ${stockData.fiftyTwoWeekHigh.toFixed(2)}
+                      </div>
+                      <div className="mt-1.5 h-1 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-primary/40 rounded-full"
+                          style={{ width: `${Math.min(100, ((stockData.price - stockData.fiftyTwoWeekLow) / (stockData.fiftyTwoWeekHigh - stockData.fiftyTwoWeekLow)) * 100)}%` }}
+                        />
+                      </div>
+                    </>
+                  ) : <div className="text-sm font-mono">—</div>}
+                </CardContent>
+              </Card>
+              <Card className="bg-card border-card-border">
+                <CardContent className="p-4">
+                  <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">Bid / Ask</div>
+                  <div className="text-sm font-mono font-semibold">
+                    {stockData.bid != null ? `$${stockData.bid.toFixed(2)}` : '—'}
+                    <span className="text-muted-foreground/40 mx-1">/</span>
+                    {stockData.ask != null ? `$${stockData.ask.toFixed(2)}` : '—'}
+                  </div>
+                  {stockData.bid != null && stockData.ask != null && (
+                    <div className="text-xs text-muted-foreground/50 mt-0.5">spread ${(stockData.ask - stockData.bid).toFixed(2)}</div>
+                  )}
+                </CardContent>
+              </Card>
+              <Card className="bg-card border-card-border">
+                <CardContent className="p-4">
+                  <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">Div. Yield</div>
+                  <div className="text-lg font-mono font-semibold">
+                    {stockData.dividendYield != null
+                      ? `${(stockData.dividendYield * 100).toFixed(2)}%`
+                      : '—'}
+                  </div>
+                  <div className="text-xs text-muted-foreground/50 mt-0.5">TTM</div>
                 </CardContent>
               </Card>
             </div>

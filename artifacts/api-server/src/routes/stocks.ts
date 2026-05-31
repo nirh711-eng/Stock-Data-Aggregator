@@ -164,6 +164,19 @@ Focus on key strengths, risks, and what investors should watch.`;
       preMarketChangePercent: q.preMarketChangePercent ?? null,
       postMarketPrice: q.postMarketPrice ?? null,
       postMarketChangePercent: q.postMarketChangePercent ?? null,
+      regularMarketTime: q.regularMarketTime instanceof Date
+        ? q.regularMarketTime.toISOString()
+        : (q.regularMarketTime ? new Date((q.regularMarketTime as number) * 1000).toISOString() : null),
+      fetchedAt: new Date().toISOString(),
+      volume: q.regularMarketVolume ?? null,
+      averageVolume: q.averageDailyVolume3Month ?? q.averageDailyVolume10Day ?? null,
+      dayHigh: q.regularMarketDayHigh ?? null,
+      dayLow: q.regularMarketDayLow ?? null,
+      fiftyTwoWeekHigh: q.fiftyTwoWeekHigh ?? null,
+      fiftyTwoWeekLow: q.fiftyTwoWeekLow ?? null,
+      bid: q.bid ?? null,
+      ask: q.ask ?? null,
+      dividendYield: q.trailingAnnualDividendYield ?? null,
     };
 
     res.json(stockData);

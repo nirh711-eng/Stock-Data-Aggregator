@@ -74,6 +74,19 @@ export interface StockData {
   preMarketChangePercent?: number | null;
   postMarketPrice?: number | null;
   postMarketChangePercent?: number | null;
+  /** ISO timestamp of the last market price update from exchange */
+  regularMarketTime?: string | null;
+  /** ISO timestamp of when the server fetched this data */
+  fetchedAt: string;
+  volume?: number | null;
+  averageVolume?: number | null;
+  dayHigh?: number | null;
+  dayLow?: number | null;
+  fiftyTwoWeekHigh?: number | null;
+  fiftyTwoWeekLow?: number | null;
+  bid?: number | null;
+  ask?: number | null;
+  dividendYield?: number | null;
 }
 
 export interface StockSummary {

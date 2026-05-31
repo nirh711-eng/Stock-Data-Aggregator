@@ -65,6 +65,22 @@ export const GetStockDataResponse = zod.object({
   preMarketChangePercent: zod.number().nullish(),
   postMarketPrice: zod.number().nullish(),
   postMarketChangePercent: zod.number().nullish(),
+  regularMarketTime: zod
+    .string()
+    .nullish()
+    .describe("ISO timestamp of the last market price update from exchange"),
+  fetchedAt: zod
+    .string()
+    .describe("ISO timestamp of when the server fetched this data"),
+  volume: zod.number().nullish(),
+  averageVolume: zod.number().nullish(),
+  dayHigh: zod.number().nullish(),
+  dayLow: zod.number().nullish(),
+  fiftyTwoWeekHigh: zod.number().nullish(),
+  fiftyTwoWeekLow: zod.number().nullish(),
+  bid: zod.number().nullish(),
+  ask: zod.number().nullish(),
+  dividendYield: zod.number().nullish(),
 });
 
 /**
