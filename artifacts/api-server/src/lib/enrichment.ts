@@ -79,7 +79,7 @@ export async function fetchFinnhub(ticker: string): Promise<FinnhubData | null> 
       ),
     ]);
 
-    const news = (Array.isArray(newsRaw) ? newsRaw : []).slice(0, 3);
+    const news = (Array.isArray(newsRaw) ? newsRaw : []).slice(0, 8);
     const newsText = news.length > 0
       ? news.map(n => `  - ${n.headline} (${n.source ?? "?"}, ${new Date((n.datetime || 0) * 1000).toLocaleDateString("he-IL")})`).join("\n")
       : "  אין חדשות";

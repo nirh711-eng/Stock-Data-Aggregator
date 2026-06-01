@@ -32,12 +32,14 @@ router.get("/stocks/:ticker/daily-analysis", async (req, res) => {
   const upperTicker = ticker.toUpperCase();
 
   try {
-    const [quoteResult, qsResult, insightsResult, finnhubData, techData, sentimentData, marketauxData] = await Promise.all([
+    const [quoteResult, qsResult, insightsResult, searchResult, finnhubData, techData, sentimentData, marketauxData] = await Promise.all([
       yahooFinance.quote(upperTicker).catch(() => null),
       yahooFinance.quoteSummary(upperTicker, {
         modules: ["financialData", "defaultKeyStatistics", "recommendationTrend", "assetProfile", "calendarEvents", "earningsHistory"],
       }).catch(() => null),
       yahooFinance.insights(upperTicker).catch(() => null),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      yahooFinance.search(upperTicker, { newsCount: 10, quotesCount: 0 } as any, { validateResult: false }).catch(() => null),
       fetchFinnhub(upperTicker),
       fetchTechnicals(upperTicker),
       fetchNewsSentiment(upperTicker),
@@ -94,11 +96,36 @@ router.get("/stocks/:ticker/daily-analysis", async (req, res) => {
         }
       : null;
 
-    // Recent news — from Finnhub (replaces Yahoo Finance search)
-    const recentNews = (finnhubData?.newsText ?? "")
+    // Recent news — Yahoo Finance (primary, free) + Finnhub (supplementary)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const yfNews: any[] = (searchResult as any)?.news ?? [];
+    const yfNewsItems = yfNews.slice(0, 8).map((n: any) => ({
+      title: n.title ?? "",
+      publisher: n.publisher ?? null,
+      url: n.link ?? null,
+      publishedAt: n.providerPublishTime
+        ? (n.providerPublishTime instanceof Date
+            ? n.providerPublishTime.toISOString()
+            : new Date(n.providerPublishTime * 1000).toISOString())
+        : null,
+    }));
+
+    const finnhubNewsItems = (finnhubData?.newsText ?? "")
       .split("\n")
       .filter(Boolean)
-      .map(line => ({ title: line.replace(/^\s*-\s*/, ""), publisher: null, url: null, publishedAt: null }));
+      .map(line => ({ title: line.replace(/^\s*-\s*/, "").replace(/\s*\([^)]+\)\s*$/, "").trim(), publisher: null, url: null, publishedAt: null }));
+
+    // Merge: YF news first, then Finnhub items not already covered (dedupe by title prefix)
+    const yfTitles = new Set(yfNewsItems.map(n => n.title.slice(0, 40).toLowerCase()));
+    const uniqueFinnhub = finnhubNewsItems.filter(n => !yfTitles.has(n.title.slice(0, 40).toLowerCase()));
+    const recentNews = [...yfNewsItems, ...uniqueFinnhub].slice(0, 12);
+
+    // Build combined news text for AI context
+    const allNewsText = recentNews.length > 0
+      ? recentNews.map(n =>
+          `  - ${n.title}${n.publisher ? ` (${n.publisher})` : ""}${n.publishedAt ? ` | ${new Date(n.publishedAt).toLocaleDateString("he-IL")}` : ""}`
+        ).join("\n")
+      : "  אין חדשות";
 
     // Significant developments
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -192,14 +219,14 @@ ${technicalOutlook ? `כיוון: ${technicalOutlook.direction} | ${technicalOut
 ${techData?.fullText ?? "לא זמין"}
 SMA50: $${(q.fiftyDayAverage ?? 0) > 0 ? (q.fiftyDayAverage as number).toFixed(2) : "N/A"} | SMA200: $${(q.twoHundredDayAverage ?? 0) > 0 ? (q.twoHundredDayAverage as number).toFixed(2) : "N/A"} | מחיר מול SMA50: ${q.regularMarketPrice && q.fiftyDayAverage ? ((q.regularMarketPrice / q.fiftyDayAverage - 1) * 100).toFixed(1) + "%" : "N/A"}
 
---- חדשות אחרונות (Finnhub) ---
-${finnhubData?.newsText ?? "  אין חדשות"}
+--- חדשות אחרונות ---
+${allNewsText}
 
 --- עסקאות פנים אחרונות (Finnhub) ---
 ${finnhubData?.insiderText ?? "  לא זמין"}
 
---- סנטימנט חדשות (Alpha Vantage) ---
-${sentimentData ? `ציון כולל: ${sentimentData.overallLabel} (${sentimentData.overallScore?.toFixed(3) ?? "N/A"})\n${sentimentData.articlesText}` : marketauxData?.text ?? "  לא זמין"}
+--- סנטימנט חדשות ---
+${sentimentData ? `ציון כולל: ${sentimentData.overallLabel} (${sentimentData.overallScore?.toFixed(3) ?? "N/A"})\n${sentimentData.articlesText}` : marketauxData?.text ?? "  ראה חדשות למעלה"}
 
 --- התפתחויות משמעותיות ---
 ${sigDevs.length > 0 ? sigDevs.map((s: { headline: string; date: string | null }) => `- ${s.headline}`).join("\n") : "אין"}
