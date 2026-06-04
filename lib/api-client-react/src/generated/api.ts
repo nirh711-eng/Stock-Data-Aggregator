@@ -22,6 +22,7 @@ import type {
   ErrorResponse,
   GetStockHistoryParams,
   HealthStatus,
+  MarketDailyReport,
   StockData,
   StockHistory,
   StockSummary,
@@ -662,6 +663,82 @@ export function useGetStockDeepAnalysis<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetStockDeepAnalysisQueryOptions(ticker, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns real-time sector ETF performance, major indices, capital flow analysis, and AI-generated market pulse
+ * @summary Get daily market overview with sector flows and AI analysis
+ */
+export const getGetMarketDailyReportUrl = () => {
+  return `/api/market/daily-report`;
+};
+
+export const getMarketDailyReport = async (
+  options?: RequestInit,
+): Promise<MarketDailyReport> => {
+  return customFetch<MarketDailyReport>(getGetMarketDailyReportUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetMarketDailyReportQueryKey = () => {
+  return [`/api/market/daily-report`] as const;
+};
+
+export const getGetMarketDailyReportQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMarketDailyReport>>,
+  TError = ErrorType<ErrorResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getMarketDailyReport>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetMarketDailyReportQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getMarketDailyReport>>
+  > = ({ signal }) => getMarketDailyReport({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMarketDailyReport>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetMarketDailyReportQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMarketDailyReport>>
+>;
+export type GetMarketDailyReportQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get daily market overview with sector flows and AI analysis
+ */
+
+export function useGetMarketDailyReport<
+  TData = Awaited<ReturnType<typeof getMarketDailyReport>>,
+  TError = ErrorType<ErrorResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getMarketDailyReport>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetMarketDailyReportQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

@@ -348,3 +348,47 @@ export const GetStockDeepAnalysisResponse = zod.object({
     .nullish(),
   generatedAt: zod.string(),
 });
+
+/**
+ * Returns real-time sector ETF performance, major indices, capital flow analysis, and AI-generated market pulse
+ * @summary Get daily market overview with sector flows and AI analysis
+ */
+export const GetMarketDailyReportResponse = zod.object({
+  generatedAt: zod.string(),
+  fearLabel: zod.string().nullish(),
+  vixLevel: zod.number().nullish(),
+  sectorPerformance: zod.array(
+    zod.object({
+      ticker: zod.string(),
+      name: zod.string(),
+      price: zod.number().nullish(),
+      changePercent: zod.number().nullish(),
+      change: zod.number().nullish(),
+      volume: zod.number().nullish(),
+      avgVolume: zod.number().nullish(),
+      relativeVolume: zod.number().nullish(),
+      fiftyTwoWeekHigh: zod.number().nullish(),
+      fiftyTwoWeekLow: zod.number().nullish(),
+    }),
+  ),
+  indices: zod.array(
+    zod.object({
+      ticker: zod.string(),
+      name: zod.string(),
+      price: zod.number().nullish(),
+      changePercent: zod.number().nullish(),
+      change: zod.number().nullish(),
+    }),
+  ),
+  marketPulse: zod.object({
+    marketPosture: zod.string(),
+    sectorRotation: zod.string(),
+    capitalFlow: zod.string(),
+    keyThemes: zod.string(),
+    topSectors: zod.string(),
+    weakSectors: zod.string(),
+    macroImpact: zod.string(),
+    risks: zod.string(),
+    actionableInsights: zod.string(),
+  }),
+});

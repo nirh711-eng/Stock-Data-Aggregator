@@ -208,6 +208,26 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /market/daily-report:
+    get:
+      operationId: getMarketDailyReport
+      tags: [market]
+      summary: Get daily market overview with sector flows and AI analysis
+      description: Returns real-time sector ETF performance, major indices, capital flow analysis, and AI-generated market pulse
+      responses:
+        "200":
+          description: Market daily report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketDailyReport"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -698,6 +718,120 @@ components:
         - supplyChain
         - preMortem
         - thesisBreaker
+
+    SectorPerformanceItem:
+      type: object
+      properties:
+        ticker:
+          type: string
+        name:
+          type: string
+        price:
+          type: number
+          nullable: true
+        changePercent:
+          type: number
+          nullable: true
+        change:
+          type: number
+          nullable: true
+        volume:
+          type: number
+          nullable: true
+        avgVolume:
+          type: number
+          nullable: true
+        relativeVolume:
+          type: number
+          nullable: true
+        fiftyTwoWeekHigh:
+          type: number
+          nullable: true
+        fiftyTwoWeekLow:
+          type: number
+          nullable: true
+      required:
+        - ticker
+        - name
+
+    IndexItem:
+      type: object
+      properties:
+        ticker:
+          type: string
+        name:
+          type: string
+        price:
+          type: number
+          nullable: true
+        changePercent:
+          type: number
+          nullable: true
+        change:
+          type: number
+          nullable: true
+      required:
+        - ticker
+        - name
+
+    MarketPulseAnalysis:
+      type: object
+      properties:
+        marketPosture:
+          type: string
+        sectorRotation:
+          type: string
+        capitalFlow:
+          type: string
+        keyThemes:
+          type: string
+        topSectors:
+          type: string
+        weakSectors:
+          type: string
+        macroImpact:
+          type: string
+        risks:
+          type: string
+        actionableInsights:
+          type: string
+      required:
+        - marketPosture
+        - sectorRotation
+        - capitalFlow
+        - keyThemes
+        - topSectors
+        - weakSectors
+        - macroImpact
+        - risks
+        - actionableInsights
+
+    MarketDailyReport:
+      type: object
+      properties:
+        generatedAt:
+          type: string
+        fearLabel:
+          type: string
+          nullable: true
+        vixLevel:
+          type: number
+          nullable: true
+        sectorPerformance:
+          type: array
+          items:
+            $ref: "#/components/schemas/SectorPerformanceItem"
+        indices:
+          type: array
+          items:
+            $ref: "#/components/schemas/IndexItem"
+        marketPulse:
+          $ref: "#/components/schemas/MarketPulseAnalysis"
+      required:
+        - generatedAt
+        - sectorPerformance
+        - indices
+        - marketPulse
 
     DailyAnalysis:
       type: object

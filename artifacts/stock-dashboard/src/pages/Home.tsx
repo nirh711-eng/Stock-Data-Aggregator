@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, TrendingUp, TrendingDown, Clock, Building2, Calendar, FileText, Activity, Star, RefreshCw, AlertTriangle, BarChart2, ArrowUpDown, Layers } from "lucide-react";
+import { Search, TrendingUp, TrendingDown, Clock, Building2, Calendar, FileText, Activity, Star, RefreshCw, AlertTriangle, BarChart2, ArrowUpDown, Layers, Globe } from "lucide-react";
 import { 
   useGetStockData, 
   useGetStockSummary, 
@@ -19,6 +19,7 @@ import { CompanyProfile } from "@/components/CompanyProfile";
 import { SectorExplorer } from "@/components/SectorExplorer";
 import { NotificationCenter } from "@/components/NotificationCenter";
 import { TradingViewChart } from "@/components/TradingViewChart";
+import { MarketReport } from "@/components/MarketReport";
 import { useWatchlist } from "@/hooks/useWatchlist";
 
 const POPULAR_TICKERS = ["AAPL", "TSLA", "NVDA", "MSFT"];
@@ -58,7 +59,7 @@ const formatHebrewNumber = (num: number, options?: Intl.NumberFormatOptions) => 
 export default function Home() {
   const [searchInput, setSearchInput] = useState("");
   const [activeTicker, setActiveTicker] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"search" | "sectors">("search");
+  const [activeTab, setActiveTab] = useState<"search" | "sectors" | "market">("search");
   const queryClient = useQueryClient();
 
   const {
@@ -187,7 +188,24 @@ export default function Home() {
             <Layers className="w-3.5 h-3.5" />
             סקטורים
           </button>
+          <button
+            onClick={() => setActiveTab("market")}
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
+              ${activeTab === "market"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"}`}
+          >
+            <Globe className="w-3.5 h-3.5" />
+            סיכום יומי
+          </button>
         </div>
+
+        {/* Market Daily Report Tab */}
+        {activeTab === "market" && (
+          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <MarketReport />
+          </div>
+        )}
 
         {/* Sector Explorer Tab */}
         {activeTab === "sectors" && (

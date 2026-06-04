@@ -253,6 +253,48 @@ export interface DeepAnalysis {
   generatedAt: string;
 }
 
+export interface SectorPerformanceItem {
+  ticker: string;
+  name: string;
+  price?: number | null;
+  changePercent?: number | null;
+  change?: number | null;
+  volume?: number | null;
+  avgVolume?: number | null;
+  relativeVolume?: number | null;
+  fiftyTwoWeekHigh?: number | null;
+  fiftyTwoWeekLow?: number | null;
+}
+
+export interface IndexItem {
+  ticker: string;
+  name: string;
+  price?: number | null;
+  changePercent?: number | null;
+  change?: number | null;
+}
+
+export interface MarketPulseAnalysis {
+  marketPosture: string;
+  sectorRotation: string;
+  capitalFlow: string;
+  keyThemes: string;
+  topSectors: string;
+  weakSectors: string;
+  macroImpact: string;
+  risks: string;
+  actionableInsights: string;
+}
+
+export interface MarketDailyReport {
+  generatedAt: string;
+  fearLabel?: string | null;
+  vixLevel?: number | null;
+  sectorPerformance: SectorPerformanceItem[];
+  indices: IndexItem[];
+  marketPulse: MarketPulseAnalysis;
+}
+
 export interface DailyMetrics {
   price: number;
   priceChangePercent: number;
