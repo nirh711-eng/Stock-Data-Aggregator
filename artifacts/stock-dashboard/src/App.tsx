@@ -19,10 +19,6 @@ function Router() {
 }
 
 function App() {
-  // Force dark mode
-  useEffect(() => {
-    document.documentElement.classList.add("dark");
-  }, []);
 
   return (
     <PasscodeGate>

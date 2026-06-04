@@ -60,56 +60,57 @@
 }
 
 :root {
-  --button-outline: rgba(255,255,255, .10);
-  --badge-outline: rgba(255,255,255, .05);
+  --button-outline: rgba(0, 0, 0, 0.08);
+  --badge-outline: rgba(0, 0, 0, 0.05);
   --opaque-button-border-intensity: 9;
-  --elevate-1: rgba(255,255,255, .04);
-  --elevate-2: rgba(255,255,255, .09);
+  --elevate-1: rgba(0, 0, 0, 0.03);
+  --elevate-2: rgba(0, 0, 0, 0.06);
 
-  /* Defaulting to dark mode since it's a pro trading tool */
-  --background: 224 25% 6%;
-  --foreground: 210 20% 98%;
-  --border: 220 25% 15%;
-  
-  --card: 224 25% 9%;
-  --card-foreground: 210 20% 98%;
-  --card-border: 220 25% 15%;
-  
-  --popover: 224 25% 9%;
-  --popover-foreground: 210 20% 98%;
-  --popover-border: 220 25% 15%;
-  
-  --primary: 210 100% 55%;
+  /* Light professional — navy accents */
+  --background: 210 20% 97%;
+  --foreground: 222 47% 11%;
+  --border: 214 20% 88%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --card-border: 214 20% 88%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 47% 11%;
+  --popover-border: 214 20% 88%;
+
+  /* Navy blue primary */
+  --primary: 221 83% 35%;
   --primary-foreground: 0 0% 100%;
-  
-  --secondary: 220 25% 15%;
-  --secondary-foreground: 210 20% 98%;
-  
-  --muted: 220 25% 15%;
-  --muted-foreground: 215 15% 65%;
-  
-  --accent: 220 25% 15%;
-  --accent-foreground: 210 20% 98%;
-  
-  --destructive: 350 70% 50%;
+
+  --secondary: 214 20% 93%;
+  --secondary-foreground: 222 47% 20%;
+
+  --muted: 214 20% 93%;
+  --muted-foreground: 215 16% 47%;
+
+  --accent: 214 30% 90%;
+  --accent-foreground: 221 83% 30%;
+
+  --destructive: 0 72% 51%;
   --destructive-foreground: 0 0% 100%;
-  
-  --positive: 142 70% 40%;
+
+  --positive: 142 62% 33%;
   --positive-foreground: 0 0% 100%;
-  
-  --input: 220 25% 15%;
-  --ring: 210 100% 55%;
-  
-  --chart-1: 210 100% 55%;
-  --chart-2: 142 70% 40%;
-  --chart-3: 350 70% 50%;
-  --chart-4: 40 90% 55%;
-  --chart-5: 280 80% 60%;
+
+  --input: 214 20% 88%;
+  --ring: 221 83% 35%;
+
+  --chart-1: 221 83% 35%;
+  --chart-2: 142 62% 33%;
+  --chart-3: 0 72% 51%;
+  --chart-4: 38 92% 45%;
+  --chart-5: 262 80% 50%;
 
   --app-font-sans: 'Inter', sans-serif;
   --app-font-serif: Georgia, serif;
   --app-font-mono: 'JetBrains Mono', monospace;
-  --radius: 0.25rem;
+  --radius: 0.375rem;
 
   --sidebar-primary-border: hsl(var(--primary));
   --sidebar-accent-border: hsl(var(--accent));
@@ -124,33 +125,33 @@
   --background: 224 25% 6%;
   --foreground: 210 20% 98%;
   --border: 220 25% 15%;
-  
+
   --card: 224 25% 9%;
   --card-foreground: 210 20% 98%;
   --card-border: 220 25% 15%;
-  
+
   --popover: 224 25% 9%;
   --popover-foreground: 210 20% 98%;
   --popover-border: 220 25% 15%;
-  
+
   --primary: 210 100% 55%;
   --primary-foreground: 0 0% 100%;
-  
+
   --secondary: 220 25% 15%;
   --secondary-foreground: 210 20% 98%;
-  
+
   --muted: 220 25% 15%;
   --muted-foreground: 215 15% 65%;
-  
+
   --accent: 220 25% 15%;
   --accent-foreground: 210 20% 98%;
-  
+
   --destructive: 350 70% 50%;
   --destructive-foreground: 0 0% 100%;
-  
+
   --positive: 142 70% 40%;
   --positive-foreground: 0 0% 100%;
-  
+
   --input: 220 25% 15%;
   --ring: 210 100% 55%;
 }
