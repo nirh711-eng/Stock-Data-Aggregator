@@ -902,6 +902,57 @@ components:
         - event
         - country
 
+    PremarketMover:
+      type: object
+      properties:
+        ticker:
+          type: string
+        name:
+          type: string
+        sector:
+          type: string
+        price:
+          type: number
+          nullable: true
+        changePercent:
+          type: number
+          nullable: true
+        preMarketPrice:
+          type: number
+          nullable: true
+        preMarketChangePercent:
+          type: number
+          nullable: true
+        postMarketChangePercent:
+          type: number
+          nullable: true
+        extendedChangePercent:
+          type: number
+          nullable: true
+        marketState:
+          type: string
+          nullable: true
+      required:
+        - ticker
+        - name
+        - sector
+
+    ImpliedSectorRotation:
+      type: object
+      properties:
+        sector:
+          type: string
+        avgPrePct:
+          type: number
+        stocks:
+          type: array
+          items:
+            type: string
+      required:
+        - sector
+        - avgPrePct
+        - stocks
+
     MarketPulseAnalysis:
       type: object
       properties:
@@ -978,6 +1029,22 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/EconomicEvent"
+        premarketMovers:
+          type: array
+          items:
+            $ref: "#/components/schemas/PremarketMover"
+        topPreMarketGainers:
+          type: array
+          items:
+            $ref: "#/components/schemas/PremarketMover"
+        topPreMarketLosers:
+          type: array
+          items:
+            $ref: "#/components/schemas/PremarketMover"
+        impliedSectorRotation:
+          type: array
+          items:
+            $ref: "#/components/schemas/ImpliedSectorRotation"
         marketPulse:
           $ref: "#/components/schemas/MarketPulseAnalysis"
       required:
@@ -988,6 +1055,10 @@ components:
         - international
         - currencies
         - economicEvents
+        - premarketMovers
+        - topPreMarketGainers
+        - topPreMarketLosers
+        - impliedSectorRotation
         - marketPulse
 
     DailyAnalysis:

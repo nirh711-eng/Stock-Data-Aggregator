@@ -10,6 +10,8 @@ type InternationalItem = { ticker: string; name: string; price?: number | null; 
 type CurrencyItem = { ticker: string; name: string; price?: number | null; changePercent?: number | null; preMarketChangePercent?: number | null };
 type EconomicEvent = { event: string; country: string; impact?: string | null; actual?: string | null; estimate?: string | null; previous?: string | null; time?: string | null };
 type SectorPerformanceItem = { ticker: string; name: string; price?: number | null; changePercent?: number | null; preMarketChangePercent?: number | null; postMarketChangePercent?: number | null; relativeVolume?: number | null; fiftyTwoWeekHigh?: number | null; marketState?: string | null };
+type PremarketMover = { ticker: string; name: string; sector: string; price?: number | null; changePercent?: number | null; preMarketPrice?: number | null; preMarketChangePercent?: number | null; postMarketChangePercent?: number | null; extendedChangePercent?: number | null; marketState?: string | null };
+type ImpliedSectorRotation = { sector: string; avgPrePct: number; stocks: string[] };
 import {
   BarChart3, RefreshCw, TrendingUp, TrendingDown, Minus, AlertTriangle,
   DollarSign, Zap, Eye, Lightbulb, Globe, Activity, ArrowUpRight,
@@ -152,6 +154,69 @@ function EventRow({ e }: { e: EconomicEvent }) {
           {e.actual && <span className="text-green-400">פועלי: {e.actual}</span>}
           {e.previous && <span>קודם: {e.previous}</span>}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function PremarketMoverCard({ m, side }: { m: PremarketMover; side: "up" | "down" }) {
+  const cp = m.extendedChangePercent ?? m.preMarketChangePercent ?? m.postMarketChangePercent;
+  const isUp = (cp ?? 0) >= 0;
+  return (
+    <div className={`flex items-center justify-between py-1.5 px-2 rounded-lg border transition-colors ${isUp ? "border-green-500/20 bg-green-500/5" : "border-red-500/20 bg-red-500/5"}`}>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-mono font-bold text-foreground" dir="ltr">{m.ticker}</span>
+          <span className={`text-[9px] px-1 py-0.5 rounded font-medium ${isUp ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>
+            {m.sector}
+          </span>
+        </div>
+        <div className="text-[10px] text-muted-foreground/70 mt-0.5">
+          Close: {pctStr(m.changePercent) ?? "—"}
+          {m.preMarketPrice && m.price && (
+            <span className="ml-2 font-mono">${m.preMarketPrice.toFixed(2)}</span>
+          )}
+        </div>
+      </div>
+      <div className="shrink-0 mr-1">
+        <PctBadge v={cp} />
+      </div>
+    </div>
+  );
+}
+
+function ImpliedRotationBar({ rotation }: { rotation: ImpliedSectorRotation[] }) {
+  if (!rotation.length) return null;
+  const max = Math.max(...rotation.map(r => Math.abs(r.avgPrePct)), 0.1);
+  return (
+    <div className="space-y-1.5">
+      {rotation.map(r => {
+        const barW = Math.min((Math.abs(r.avgPrePct) / max) * 100, 100);
+        const isPos = r.avgPrePct >= 0;
+        return (
+          <div key={r.sector} className="flex items-center gap-2 group">
+            <div className="w-24 shrink-0 text-right">
+              <span className="text-xs text-foreground/80">{r.sector}</span>
+            </div>
+            <div className="flex-1 h-5 bg-muted/20 rounded relative overflow-hidden">
+              <div
+                className={`absolute top-0 bottom-0 rounded transition-all ${isPos ? "bg-green-500/40 left-1/2" : "bg-red-500/40 right-1/2"}`}
+                style={{ width: `${barW * 0.5}%` }}
+              />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className={`text-xs font-bold ${isPos ? "text-green-400" : "text-red-400"}`}>
+                  {r.avgPrePct >= 0 ? "+" : ""}{r.avgPrePct.toFixed(2)}%
+                </span>
+              </div>
+            </div>
+            <div className="w-40 text-[10px] text-muted-foreground/60 truncate hidden sm:block">
+              {r.stocks.slice(0, 3).join(" · ")}
+            </div>
+          </div>
+        );
+      })}
+      <div className="text-[10px] text-muted-foreground/50 pt-1">
+        * ממוצע weighted לפי מניות בודדות — לא ETF סגירה
       </div>
     </div>
   );
@@ -364,6 +429,69 @@ export function MarketReport() {
           )}
         </div>
       </div>
+
+      {/* ── Pre-Market Movers + Implied Sector Rotation ── */}
+      {(data.topPreMarketGainers?.length > 0 || data.topPreMarketLosers?.length > 0 || data.impliedSectorRotation?.length > 0) && (
+        <div className="space-y-4">
+          {/* Header notice */}
+          <div className={`flex items-center gap-2 text-xs px-3 py-2 rounded-lg border ${stateMeta.bg} ${stateMeta.color}`}>
+            <Activity className="w-3.5 h-3.5 shrink-0" />
+            <span className="font-medium">
+              {data.marketState === "PRE" ? "Pre-Market פעיל — הנתונים הבאים מייצגים את הרוטציה האמיתית עכשיו:" : data.marketState === "POST" ? "After-Hours פעיל — מניות זזות לפני מסחר מחר:" : "מסחר סגור — חוזים + מניות מרמזים על כיוון פתיחה:"}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            {/* Gainers */}
+            <Card className="border-t-[3px] border-t-green-500 bg-card/50">
+              <CardHeader className="pb-2 border-b border-border/50 bg-muted/10">
+                <CardTitle className="text-xs flex items-center gap-1.5 text-green-400">
+                  <ArrowUpRight className="w-3.5 h-3.5" />
+                  עולות Pre/Post Market
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-3 space-y-1.5">
+                {data.topPreMarketGainers?.length > 0
+                  ? data.topPreMarketGainers.map(m => <PremarketMoverCard key={m.ticker} m={m} side="up" />)
+                  : <p className="text-xs text-muted-foreground text-center py-4">אין נתוני pre-market</p>
+                }
+              </CardContent>
+            </Card>
+
+            {/* Losers */}
+            <Card className="border-t-[3px] border-t-red-500 bg-card/50">
+              <CardHeader className="pb-2 border-b border-border/50 bg-muted/10">
+                <CardTitle className="text-xs flex items-center gap-1.5 text-red-400">
+                  <ArrowDownRight className="w-3.5 h-3.5" />
+                  יורדות Pre/Post Market
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-3 space-y-1.5">
+                {data.topPreMarketLosers?.length > 0
+                  ? data.topPreMarketLosers.map(m => <PremarketMoverCard key={m.ticker} m={m} side="down" />)
+                  : <p className="text-xs text-muted-foreground text-center py-4">אין נתוני pre-market</p>
+                }
+              </CardContent>
+            </Card>
+
+            {/* Implied Rotation */}
+            <Card className="border-t-[3px] border-t-violet-500 bg-card/50">
+              <CardHeader className="pb-2 border-b border-border/50 bg-muted/10">
+                <CardTitle className="text-xs flex items-center gap-1.5 text-violet-400">
+                  <Layers className="w-3.5 h-3.5" />
+                  רוטציה implied — לפי מניות
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="pt-3">
+                {data.impliedSectorRotation?.length > 0
+                  ? <ImpliedRotationBar rotation={data.impliedSectorRotation} />
+                  : <p className="text-xs text-muted-foreground text-center py-4">אין מספיק נתוני pre-market</p>
+                }
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      )}
 
       {/* ── Futures + International + Currencies (3 columns) ── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

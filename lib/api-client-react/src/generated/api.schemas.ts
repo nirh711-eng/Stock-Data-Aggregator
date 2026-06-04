@@ -322,6 +322,25 @@ export interface EconomicEvent {
   time?: string | null;
 }
 
+export interface PremarketMover {
+  ticker: string;
+  name: string;
+  sector: string;
+  price?: number | null;
+  changePercent?: number | null;
+  preMarketPrice?: number | null;
+  preMarketChangePercent?: number | null;
+  postMarketChangePercent?: number | null;
+  extendedChangePercent?: number | null;
+  marketState?: string | null;
+}
+
+export interface ImpliedSectorRotation {
+  sector: string;
+  avgPrePct: number;
+  stocks: string[];
+}
+
 export interface MarketPulseAnalysis {
   marketPosture: string;
   premarketOutlook: string;
@@ -347,6 +366,10 @@ export interface MarketDailyReport {
   international: InternationalItem[];
   currencies: CurrencyItem[];
   economicEvents: EconomicEvent[];
+  premarketMovers: PremarketMover[];
+  topPreMarketGainers: PremarketMover[];
+  topPreMarketLosers: PremarketMover[];
+  impliedSectorRotation: ImpliedSectorRotation[];
   marketPulse: MarketPulseAnalysis;
 }
 
