@@ -355,6 +355,7 @@ export const GetStockDeepAnalysisResponse = zod.object({
  */
 export const GetMarketDailyReportResponse = zod.object({
   generatedAt: zod.string(),
+  marketState: zod.string().nullish(),
   fearLabel: zod.string().nullish(),
   vixLevel: zod.number().nullish(),
   sectorPerformance: zod.array(
@@ -369,6 +370,11 @@ export const GetMarketDailyReportResponse = zod.object({
       relativeVolume: zod.number().nullish(),
       fiftyTwoWeekHigh: zod.number().nullish(),
       fiftyTwoWeekLow: zod.number().nullish(),
+      preMarketPrice: zod.number().nullish(),
+      preMarketChangePercent: zod.number().nullish(),
+      postMarketPrice: zod.number().nullish(),
+      postMarketChangePercent: zod.number().nullish(),
+      marketState: zod.string().nullish(),
     }),
   ),
   indices: zod.array(
@@ -378,10 +384,58 @@ export const GetMarketDailyReportResponse = zod.object({
       price: zod.number().nullish(),
       changePercent: zod.number().nullish(),
       change: zod.number().nullish(),
+      preMarketPrice: zod.number().nullish(),
+      preMarketChangePercent: zod.number().nullish(),
+      postMarketPrice: zod.number().nullish(),
+      postMarketChangePercent: zod.number().nullish(),
+      marketState: zod.string().nullish(),
+    }),
+  ),
+  futures: zod.array(
+    zod.object({
+      ticker: zod.string(),
+      name: zod.string(),
+      price: zod.number().nullish(),
+      changePercent: zod.number().nullish(),
+      change: zod.number().nullish(),
+      preMarketChangePercent: zod.number().nullish(),
+      marketState: zod.string().nullish(),
+    }),
+  ),
+  international: zod.array(
+    zod.object({
+      ticker: zod.string(),
+      name: zod.string(),
+      price: zod.number().nullish(),
+      changePercent: zod.number().nullish(),
+      change: zod.number().nullish(),
+      marketState: zod.string().nullish(),
+    }),
+  ),
+  currencies: zod.array(
+    zod.object({
+      ticker: zod.string(),
+      name: zod.string(),
+      price: zod.number().nullish(),
+      changePercent: zod.number().nullish(),
+      preMarketChangePercent: zod.number().nullish(),
+      marketState: zod.string().nullish(),
+    }),
+  ),
+  economicEvents: zod.array(
+    zod.object({
+      event: zod.string(),
+      country: zod.string(),
+      impact: zod.string().nullish(),
+      actual: zod.string().nullish(),
+      estimate: zod.string().nullish(),
+      previous: zod.string().nullish(),
+      time: zod.string().nullish(),
     }),
   ),
   marketPulse: zod.object({
     marketPosture: zod.string(),
+    premarketOutlook: zod.string(),
     sectorRotation: zod.string(),
     capitalFlow: zod.string(),
     keyThemes: zod.string(),
@@ -389,6 +443,7 @@ export const GetMarketDailyReportResponse = zod.object({
     weakSectors: zod.string(),
     macroImpact: zod.string(),
     risks: zod.string(),
+    tradingDayPrep: zod.string(),
     actionableInsights: zod.string(),
   }),
 });

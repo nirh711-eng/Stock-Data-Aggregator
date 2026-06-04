@@ -264,6 +264,11 @@ export interface SectorPerformanceItem {
   relativeVolume?: number | null;
   fiftyTwoWeekHigh?: number | null;
   fiftyTwoWeekLow?: number | null;
+  preMarketPrice?: number | null;
+  preMarketChangePercent?: number | null;
+  postMarketPrice?: number | null;
+  postMarketChangePercent?: number | null;
+  marketState?: string | null;
 }
 
 export interface IndexItem {
@@ -272,10 +277,54 @@ export interface IndexItem {
   price?: number | null;
   changePercent?: number | null;
   change?: number | null;
+  preMarketPrice?: number | null;
+  preMarketChangePercent?: number | null;
+  postMarketPrice?: number | null;
+  postMarketChangePercent?: number | null;
+  marketState?: string | null;
+}
+
+export interface FuturesItem {
+  ticker: string;
+  name: string;
+  price?: number | null;
+  changePercent?: number | null;
+  change?: number | null;
+  preMarketChangePercent?: number | null;
+  marketState?: string | null;
+}
+
+export interface InternationalItem {
+  ticker: string;
+  name: string;
+  price?: number | null;
+  changePercent?: number | null;
+  change?: number | null;
+  marketState?: string | null;
+}
+
+export interface CurrencyItem {
+  ticker: string;
+  name: string;
+  price?: number | null;
+  changePercent?: number | null;
+  preMarketChangePercent?: number | null;
+  marketState?: string | null;
+}
+
+export interface EconomicEvent {
+  event: string;
+  country: string;
+  impact?: string | null;
+  actual?: string | null;
+  estimate?: string | null;
+  previous?: string | null;
+  time?: string | null;
 }
 
 export interface MarketPulseAnalysis {
   marketPosture: string;
+  premarketOutlook: string;
   sectorRotation: string;
   capitalFlow: string;
   keyThemes: string;
@@ -283,15 +332,21 @@ export interface MarketPulseAnalysis {
   weakSectors: string;
   macroImpact: string;
   risks: string;
+  tradingDayPrep: string;
   actionableInsights: string;
 }
 
 export interface MarketDailyReport {
   generatedAt: string;
+  marketState?: string | null;
   fearLabel?: string | null;
   vixLevel?: number | null;
   sectorPerformance: SectorPerformanceItem[];
   indices: IndexItem[];
+  futures: FuturesItem[];
+  international: InternationalItem[];
+  currencies: CurrencyItem[];
+  economicEvents: EconomicEvent[];
   marketPulse: MarketPulseAnalysis;
 }
 

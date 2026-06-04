@@ -750,6 +750,21 @@ components:
         fiftyTwoWeekLow:
           type: number
           nullable: true
+        preMarketPrice:
+          type: number
+          nullable: true
+        preMarketChangePercent:
+          type: number
+          nullable: true
+        postMarketPrice:
+          type: number
+          nullable: true
+        postMarketChangePercent:
+          type: number
+          nullable: true
+        marketState:
+          type: string
+          nullable: true
       required:
         - ticker
         - name
@@ -770,14 +785,129 @@ components:
         change:
           type: number
           nullable: true
+        preMarketPrice:
+          type: number
+          nullable: true
+        preMarketChangePercent:
+          type: number
+          nullable: true
+        postMarketPrice:
+          type: number
+          nullable: true
+        postMarketChangePercent:
+          type: number
+          nullable: true
+        marketState:
+          type: string
+          nullable: true
       required:
         - ticker
         - name
+
+    FuturesItem:
+      type: object
+      properties:
+        ticker:
+          type: string
+        name:
+          type: string
+        price:
+          type: number
+          nullable: true
+        changePercent:
+          type: number
+          nullable: true
+        change:
+          type: number
+          nullable: true
+        preMarketChangePercent:
+          type: number
+          nullable: true
+        marketState:
+          type: string
+          nullable: true
+      required:
+        - ticker
+        - name
+
+    InternationalItem:
+      type: object
+      properties:
+        ticker:
+          type: string
+        name:
+          type: string
+        price:
+          type: number
+          nullable: true
+        changePercent:
+          type: number
+          nullable: true
+        change:
+          type: number
+          nullable: true
+        marketState:
+          type: string
+          nullable: true
+      required:
+        - ticker
+        - name
+
+    CurrencyItem:
+      type: object
+      properties:
+        ticker:
+          type: string
+        name:
+          type: string
+        price:
+          type: number
+          nullable: true
+        changePercent:
+          type: number
+          nullable: true
+        preMarketChangePercent:
+          type: number
+          nullable: true
+        marketState:
+          type: string
+          nullable: true
+      required:
+        - ticker
+        - name
+
+    EconomicEvent:
+      type: object
+      properties:
+        event:
+          type: string
+        country:
+          type: string
+        impact:
+          type: string
+          nullable: true
+        actual:
+          type: string
+          nullable: true
+        estimate:
+          type: string
+          nullable: true
+        previous:
+          type: string
+          nullable: true
+        time:
+          type: string
+          nullable: true
+      required:
+        - event
+        - country
 
     MarketPulseAnalysis:
       type: object
       properties:
         marketPosture:
+          type: string
+        premarketOutlook:
           type: string
         sectorRotation:
           type: string
@@ -793,10 +923,13 @@ components:
           type: string
         risks:
           type: string
+        tradingDayPrep:
+          type: string
         actionableInsights:
           type: string
       required:
         - marketPosture
+        - premarketOutlook
         - sectorRotation
         - capitalFlow
         - keyThemes
@@ -804,6 +937,7 @@ components:
         - weakSectors
         - macroImpact
         - risks
+        - tradingDayPrep
         - actionableInsights
 
     MarketDailyReport:
@@ -811,6 +945,9 @@ components:
       properties:
         generatedAt:
           type: string
+        marketState:
+          type: string
+          nullable: true
         fearLabel:
           type: string
           nullable: true
@@ -825,12 +962,32 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/IndexItem"
+        futures:
+          type: array
+          items:
+            $ref: "#/components/schemas/FuturesItem"
+        international:
+          type: array
+          items:
+            $ref: "#/components/schemas/InternationalItem"
+        currencies:
+          type: array
+          items:
+            $ref: "#/components/schemas/CurrencyItem"
+        economicEvents:
+          type: array
+          items:
+            $ref: "#/components/schemas/EconomicEvent"
         marketPulse:
           $ref: "#/components/schemas/MarketPulseAnalysis"
       required:
         - generatedAt
         - sectorPerformance
         - indices
+        - futures
+        - international
+        - currencies
+        - economicEvents
         - marketPulse
 
     DailyAnalysis:
