@@ -120,16 +120,29 @@ router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
   const upperTicker = ticker.toUpperCase();
 
   try {
-    // Fetch all in parallel — Yahoo Finance + external enrichment sources
-    const [quoteResult, qsResult, quarterlyData, finnhubData, fmpData, fredData] = await Promise.all([
+    // Fetch all data sources in parallel
+    const [quoteResult, qsResult, quarterlyData, finnhubData, fmpData, fredData, yNewsData] = await Promise.all([
       yahooFinance.quote(upperTicker).catch(() => null),
       yahooFinance.quoteSummary(upperTicker, {
-        modules: ["assetProfile", "financialData", "defaultKeyStatistics", "calendarEvents", "recommendationTrend", "upgradeDowngradeHistory", "earningsHistory", "earningsTrend"],
+        modules: [
+          "assetProfile",
+          "financialData",
+          "defaultKeyStatistics",
+          "calendarEvents",
+          "recommendationTrend",
+          "upgradeDowngradeHistory",
+          "earningsHistory",
+          "earningsTrend",
+          "incomeStatementHistoryQuarterly",
+          "balanceSheetHistoryQuarterly",
+          "cashflowStatementHistoryQuarterly",
+        ],
       }).catch(() => null),
       fetchQuarterlyTimeseries(upperTicker),
       fetchFinnhub(upperTicker),
       fetchFmp(upperTicker),
       fetchFredMacro(),
+      yahooFinance.search(upperTicker, { quotesCount: 0, newsCount: 5 }, { validateResult: false }).catch(() => null),
     ]);
 
     if (!quoteResult) {
@@ -145,7 +158,97 @@ router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
     const financials = qs?.financialData;
     const keyStats = qs?.defaultKeyStatistics;
 
-    // Build analyst consensus
+    // ── Management Profile ───────────────────────────────────────────────────────
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const officers: any[] = profile?.companyOfficers ?? [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ceoOfficer = officers.find((o: any) =>
+      (o.title ?? "").toLowerCase().includes("chief executive") ||
+      (o.title ?? "").toLowerCase().includes("ceo")
+    ) ?? officers[0] ?? null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cfoOfficer = officers.find((o: any) =>
+      (o.title ?? "").toLowerCase().includes("chief financial") ||
+      (o.title ?? "").toLowerCase().includes("cfo")
+    ) ?? null;
+    const ceoName = ceoOfficer ? `${ceoOfficer.name ?? "N/A"} (${ceoOfficer.title ?? "N/A"})` : "N/A";
+    const cfoName = cfoOfficer ? cfoOfficer.name ?? "N/A" : "N/A";
+    const ceoAge = ceoOfficer?.age ?? null;
+
+    // ── Advanced Financial Ratios ────────────────────────────────────────────────
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const incomeStmts: any[] = qs?.incomeStatementHistoryQuarterly?.incomeStatementHistory ?? [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const balanceSheets: any[] = qs?.balanceSheetHistoryQuarterly?.balanceSheetStatements ?? [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cashflowStmts: any[] = qs?.cashflowStatementHistoryQuarterly?.cashflowStatements ?? [];
+
+    const latestIncome = incomeStmts[0] ?? null;
+    const latestBalance = balanceSheets[0] ?? null;
+    const latestCashflow = cashflowStmts[0] ?? null;
+
+    // ROIC: NOPAT (annualized) / Invested Capital
+    const ebitQ: number | null = latestIncome?.ebit?.raw ?? null;
+    const incomeTaxQ: number | null = latestIncome?.incomeTaxExpense?.raw ?? null;
+    const incomeBeforeTaxQ: number | null = latestIncome?.incomeBeforeTax?.raw ?? null;
+    const taxRate = (incomeTaxQ != null && incomeBeforeTaxQ != null && incomeBeforeTaxQ !== 0)
+      ? Math.max(0, Math.min(0.5, Math.abs(incomeTaxQ / incomeBeforeTaxQ)))
+      : 0.21;
+    const nopatAnnual = ebitQ != null ? ebitQ * 4 * (1 - taxRate) : null;
+
+    const totalEquity: number | null = latestBalance?.totalStockholderEquity?.raw ?? null;
+    const longTermDebt: number | null = latestBalance?.longTermDebt?.raw ?? null;
+    const shortTermDebt: number | null = latestBalance?.shortLongTermDebt?.raw ?? null;
+    const totalDebtBalance = (longTermDebt ?? 0) + (shortTermDebt ?? 0);
+    const investedCapital = totalEquity != null ? totalEquity + totalDebtBalance : null;
+
+    const roic = nopatAnnual != null && investedCapital != null && investedCapital > 0
+      ? nopatAnnual / investedCapital
+      : null;
+    const roicStr = roic != null
+      ? `${(roic * 100).toFixed(1)}% ${roic > 0.15 ? "🟢 מצוין (>15%)" : roic > 0.08 ? "🟡 ממוצע (8-15%)" : "🔴 נמוך (<8%)"}`
+      : "N/A";
+
+    // Interest Coverage: EBIT(annual) / |Interest Expense(annual)|
+    const interestExpQ: number | null = latestIncome?.interestExpense?.raw ?? null;
+    const ebitAnnual = ebitQ != null ? ebitQ * 4 : null;
+    const interestExpAnnual = interestExpQ != null ? interestExpQ * 4 : null;
+    const interestCoverage = ebitAnnual != null && interestExpAnnual != null && interestExpAnnual !== 0
+      ? ebitAnnual / Math.abs(interestExpAnnual)
+      : null;
+    const interestCoverageStr = interestCoverage != null
+      ? `${interestCoverage.toFixed(1)}x ${interestCoverage < 1.5 ? "🔴 סיכון גבוה (<1.5x)" : interestCoverage < 3 ? "🟡 מוגבל (1.5-3x)" : "🟢 בריא (>3x)"}`
+      : "N/A";
+
+    // CAPEX Analysis
+    const capexQ: number | null = latestCashflow?.capitalExpenditures?.raw ?? null;
+    const depreciationQ: number | null = latestCashflow?.depreciation?.raw ?? null;
+    const capexAnnual = capexQ != null ? Math.abs(capexQ) * 4 : null;
+    const depreciationAnnual = depreciationQ != null ? Math.abs(depreciationQ) * 4 : null;
+    const capexToRev = capexAnnual != null && financials?.totalRevenue != null && financials.totalRevenue > 0
+      ? `${(capexAnnual / financials.totalRevenue * 100).toFixed(1)}%`
+      : "N/A";
+    const capexToDepr = capexAnnual != null && depreciationAnnual != null && depreciationAnnual > 0
+      ? capexAnnual / depreciationAnnual
+      : null;
+    const capexTypeLabel = capexToDepr != null
+      ? capexToDepr > 1.5
+        ? `📈 Growth CAPEX (${capexToDepr.toFixed(1)}x פחת — השקעה לצמיחה)`
+        : capexToDepr > 0.9
+          ? `⚖️ Maintenance+ (${capexToDepr.toFixed(1)}x פחת)`
+          : `🔧 Maintenance בלבד (${capexToDepr.toFixed(1)}x פחת)`
+      : "N/A";
+
+    // Yahoo Finance news (additional source)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const yNewsItems: any[] = yNewsData?.news ?? [];
+    const yNewsText = yNewsItems.length > 0
+      ? yNewsItems.slice(0, 5).map((n: { title?: string; publisher?: string }) =>
+          `  - ${n.title ?? "?"} (${n.publisher ?? "?"})`
+        ).join("\n")
+      : "  לא זמין";
+
+    // ── Analyst Consensus ────────────────────────────────────────────────────────
     const recTrend = qs?.recommendationTrend?.trend?.[0] ?? null;
     const upgradeHistory: unknown[] = qs?.upgradeDowngradeHistory?.history ?? [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -179,10 +282,9 @@ router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
 
     const companyName = q.longName ?? q.shortName ?? upperTicker;
 
-    // Build quarterly context from timeseries data
+    // ── Quarterly Table ──────────────────────────────────────────────────────────
     const latestQ = quarterlyData[quarterlyData.length - 1] ?? null;
     const prevQ = quarterlyData[quarterlyData.length - 2] ?? null;
-
     const revGrowthQoQ = latestQ?.revenue && prevQ?.revenue
       ? ((latestQ.revenue / prevQ.revenue - 1) * 100).toFixed(1) + "%"
       : "N/A";
@@ -190,7 +292,6 @@ router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
       ? ((latestQ.netIncome / prevQ.netIncome - 1) * 100).toFixed(1) + "%"
       : "N/A";
 
-    // Use last 4 quarters only to keep prompt concise
     const recentQuarters = quarterlyData.slice(-4);
     const quartersTable = recentQuarters.length > 0
       ? recentQuarters.map(qd => {
@@ -201,7 +302,7 @@ router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
         }).join("\n")
       : "  אין נתוני רבעונים";
 
-    // Earnings beat/miss history
+    // ── Earnings Beat/Miss ───────────────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const earningsHist: any[] = qs?.earningsHistory?.history ?? [];
     const earningsHistText = earningsHist.length > 0
@@ -212,7 +313,7 @@ router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
         }).join("\n")
       : "  לא זמין";
 
-    // Earnings estimates (next quarter, next year)
+    // ── Earnings Estimates ───────────────────────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const earningsTrendData: any[] = qs?.earningsTrend?.trend ?? [];
     const nextQTrend = earningsTrendData.find((t: any) => t.period === "0q" || t.period === "+1q");
@@ -224,7 +325,7 @@ router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
       ? `שנה הבאה (TTM): EPS צפוי $${nextYTrend.earningsEstimate?.avg?.toFixed(2) ?? "N/A"} | צמיחה ${pct(nextYTrend.growth)}`
       : "";
 
-    // Calendar — next earnings date
+    // ── Next Earnings Date ───────────────────────────────────────────────────────
     const earningsDates = qs?.calendarEvents?.earnings?.earningsDate ?? [];
     const nextEarnings = earningsDates[0] instanceof Date ? earningsDates[0] : (earningsDates[0] ? new Date(earningsDates[0]) : null);
     const daysToEarnings = nextEarnings ? Math.ceil((nextEarnings.getTime() - Date.now()) / 86400000) : null;
@@ -232,10 +333,12 @@ router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
       ? `${nextEarnings.toISOString().slice(0, 10)} (בעוד ${daysToEarnings} ימים)`
       : "לא ידוע";
 
+    // ── Build Full Data Context ──────────────────────────────────────────────────
     const dataContext = `
 חברה: ${companyName} (${upperTicker})
 תעשייה: ${profile?.industry ?? "N/A"} | סקטור: ${profile?.sector ?? "N/A"}
 בורסה: ${q.fullExchangeName ?? q.exchange ?? "N/A"} | מטבע: ${q.currency ?? "USD"}
+תיאור: ${profile?.longBusinessSummary ? profile.longBusinessSummary.slice(0, 400) : "N/A"}
 
 --- נתוני שוק עדכניים ---
 מחיר: $${q.regularMarketPrice?.toFixed(2)} | שינוי יומי: ${q.regularMarketChangePercent?.toFixed(2)}%
@@ -244,8 +347,7 @@ P/E trailing: ${q.trailingPE?.toFixed(1) ?? "N/A"} | P/E forward: ${q.forwardPE?
 EPS TTM: $${q.epsTrailingTwelveMonths?.toFixed(2) ?? "N/A"} | EPS forward: $${q.epsForward?.toFixed(2) ?? "N/A"}
 P/S: ${keyStats?.priceToSalesRatioTTM?.toFixed(2) ?? "N/A"} | P/B: ${keyStats?.priceToBook?.toFixed(2) ?? "N/A"} | EV/Revenue: ${keyStats?.enterpriseToRevenue?.toFixed(2) ?? "N/A"} | EV/EBITDA: ${keyStats?.enterpriseToEbitda?.toFixed(2) ?? "N/A"}
 Beta: ${keyStats?.beta?.toFixed(2) ?? "N/A"}
-52W High: $${q.fiftyTwoWeekHigh?.toFixed(2) ?? "N/A"} | 52W Low: $${q.fiftyTwoWeekLow?.toFixed(2) ?? "N/A"} | מרחק מה-52W High: ${q.regularMarketPrice && q.fiftyTwoWeekHigh ? ((q.regularMarketPrice / q.fiftyTwoWeekHigh - 1) * 100).toFixed(1) + "%" : "N/A"}
-אחזקות: Insiders ${pct(keyStats?.heldPercentInsiders)} | מוסדיים ${pct(keyStats?.heldPercentInstitutions)}
+52W High: $${q.fiftyTwoWeekHigh?.toFixed(2) ?? "N/A"} | 52W Low: $${q.fiftyTwoWeekLow?.toFixed(2) ?? "N/A"} | מרחק מ-52W High: ${q.regularMarketPrice && q.fiftyTwoWeekHigh ? ((q.regularMarketPrice / q.fiftyTwoWeekHigh - 1) * 100).toFixed(1) + "%" : "N/A"}
 
 --- נתונים פיננסיים (TTM) ---
 הכנסות TTM: ${formatNum(financials?.totalRevenue)}
@@ -257,11 +359,24 @@ FCF Margin: ${financials?.freeCashflow && financials?.totalRevenue ? ((financial
 ROE: ${pct(financials?.returnOnEquity)} | ROA: ${pct(financials?.returnOnAssets)}
 מזומן: ${formatNum(financials?.totalCash)} | חוב: ${formatNum(financials?.totalDebt)} | D/E: ${financials?.debtToEquity?.toFixed(2) ?? "N/A"}
 
+--- מדדי יעילות הון מתקדמים ---
+ROIC (תשואה על הון מושקע): ${roicStr}
+יחס כיסוי ריבית (EBIT/Interest): ${interestCoverageStr}
+CAPEX שנתי (מוערך 4Q): ${formatNum(capexAnnual)} | CAPEX/Revenue: ${capexToRev}
+${capexTypeLabel}
+פחת שנתי (מוערך): ${formatNum(depreciationAnnual)} | CAPEX/פחת: ${capexToDepr != null ? capexToDepr.toFixed(2) + "x" : "N/A"}
+אחזקות: Insiders ${pct(keyStats?.heldPercentInsiders)} | מוסדיים ${pct(keyStats?.heldPercentInstitutions)}
+
+--- פרופיל הנהלה ---
+CEO: ${ceoName}${ceoAge ? ` | גיל: ${ceoAge}` : ""}
+CFO: ${cfoName}
+מספר נושאי משרה: ${officers.length}
+
 --- ביצועים רבעוניים (4 רבעונים + FCF) ---
 ${quartersTable}
 שינוי QoQ (הכנסות): ${revGrowthQoQ} | שינוי QoQ (רווח נקי): ${niGrowthQoQ}
 
---- היסטוריית דוחות (Beat/Miss — 4 רבעונים אחרונים) ---
+--- היסטוריית דוחות (Beat/Miss — 4 רבעונים) ---
 ${earningsHistText}
 
 --- תחזיות קונצנזוס ---
@@ -272,20 +387,20 @@ ${nextYearText}
 --- ציפיות אנליסטים ---
 קונצנזוס: ${analystConsensus.recommendationKey ?? "N/A"} | מספר אנליסטים: ${analystConsensus.numberOfAnalystOpinions ?? "N/A"}
 מחיר יעד ממוצע: $${analystConsensus.targetMeanPrice?.toFixed(2) ?? "N/A"} | גבוה: $${analystConsensus.targetHighPrice?.toFixed(2) ?? "N/A"} | נמוך: $${analystConsensus.targetLowPrice?.toFixed(2) ?? "N/A"}
-upside/downside למחיר יעד: ${analystConsensus.targetMeanPrice && q.regularMarketPrice ? ((analystConsensus.targetMeanPrice / q.regularMarketPrice - 1) * 100).toFixed(1) + "%" : "N/A"}
-דירוגים (חודש אחרון): Strong Buy=${analystConsensus.strongBuy} | Buy=${analystConsensus.buy} | Hold=${analystConsensus.hold} | Sell=${analystConsensus.sell} | Strong Sell=${analystConsensus.strongSell}
-${analystConsensus.recentActions.length > 0 ? "שינויי דירוג אחרונים:\n" + analystConsensus.recentActions.map(a => `  ${a.date}: ${a.firm} — ${a.fromGrade ? a.fromGrade + " → " : ""}${a.toGrade}${a.currentPriceTarget ? ` (PT: $${a.currentPriceTarget})` : ""}`).join("\n") : ""}
+upside למחיר יעד: ${analystConsensus.targetMeanPrice && q.regularMarketPrice ? ((analystConsensus.targetMeanPrice / q.regularMarketPrice - 1) * 100).toFixed(1) + "%" : "N/A"}
+דירוגים: Strong Buy=${analystConsensus.strongBuy} | Buy=${analystConsensus.buy} | Hold=${analystConsensus.hold} | Sell=${analystConsensus.sell} | Strong Sell=${analystConsensus.strongSell}
+${analystConsensus.recentActions.length > 0 ? "שינויי דירוג:\n" + analystConsensus.recentActions.map(a => `  ${a.date}: ${a.firm} — ${a.fromGrade ? a.fromGrade + " → " : ""}${a.toGrade}${a.currentPriceTarget ? ` (PT: $${a.currentPriceTarget})` : ""}`).join("\n") : ""}
 
---- תיאור עסקי ---
-${profile?.longBusinessSummary ? profile.longBusinessSummary.slice(0, 300) : "N/A"}
-
---- נתוני מאקרו (FRED / Federal Reserve) ---
+--- מאקרו (FRED) ---
 ${fredData?.text ?? "  לא זמין"}
 
---- חדשות אחרונות (Finnhub — 7 ימים) ---
+--- חדשות אחרונות (Yahoo Finance) ---
+${yNewsText}
+
+--- חדשות אחרונות (Finnhub) ---
 ${finnhubData?.newsText ?? "  לא זמין"}
 
---- עסקאות פנים אחרונות (Finnhub Insider Transactions) ---
+--- עסקאות פנים (Finnhub) ---
 ${finnhubData?.insiderText ?? "  לא זמין"}
 
 --- מתחרים ישירים ---
@@ -294,68 +409,100 @@ ${finnhubData?.peersText ?? "לא זמין"}
 --- דוחות רבעוניים (FMP — cross-validation) ---
 ${fmpData?.incomeText ?? "  לא זמין"}
 
---- מחזיקים מוסדיים גדולים (FMP) ---
+--- פילוח גיאוגרפי הכנסות (FMP) ---
+${fmpData?.geoText ?? "  לא זמין"}
+
+--- מחזיקים מוסדיים (FMP) ---
 ${fmpData?.holdersText ?? "  לא זמין"}
 `.trim();
 
-    const systemPrompt = `אתה אנליסט בכיר במחלקת ניתוח עומק (Deep Research) של קרן גידור גלובלית מובילה.
-הנתונים שסופקו לך הם נתוני Yahoo Finance אמיתיים ועדכניים — השתמש בהם בדיוק כפי שהם.
-כתוב בעברית. חד, ישיר, ללא מילים מיותרות. חשיבה של כסף. כל סעיף חייב לענות: איפה הערך זז ולמה עכשיו.
+    const systemPrompt = `אתה אנליסט ראשי (Head of Research) במחלקת ניתוח עומק של קרן גידור גלובלית מובילה.
+הנתונים שסופקו הם נתונים אמיתיים ועדכניים — השתמש בהם בדיוק כפי שהם ואל תמציא מספרים.
+כתוב בעברית. חד, ישיר, ללא מילים מיותרות. כל משפט חייב לנוע כסף. כל שדה — תשובה קצרה וחדה.
 CRITICAL: החזר אך ורק JSON תקני, ללא markdown, ללא טקסט מחוץ ל-JSON.
-CRITICAL: אל תשתמש בגרשיים (") בתוך ערכי טקסט - השתמש בגרש בודד (') או גרשיים עבריים (״) במקום.`;
+CRITICAL: אל תשתמש בגרשיים (") בתוך ערכי טקסט — השתמש בגרש בודד (') או גרשיים עבריים (״) במקום.`;
 
     const userPrompt = `נתח את ${companyName} (${upperTicker}) לפי הנתונים המדויקים הבאים:
 
 ${dataContext}
 
-החזר JSON עם המבנה הבא בדיוק — כל שדות חובה:
+החזר JSON עם המבנה הבא בדיוק — כל השדות חובה:
 {
   "systemUnderstanding": {
     "valueChain": "פירוק שרשרת ערך התעשייה. איפה נוצר ונלכד הערך האמיתי?",
     "valueCreation": "צווארי הבקבוק האמיתיים. מה נותן כוח?",
     "bottlenecks": "כוחות מאקרו שדוחפים או פוגעים בתעשייה עכשיו",
-    "macroTrends": "מגמות מבניות - חיוביות ושליליות"
+    "macroTrends": "מגמות מבניות — חיוביות ושליליות"
   },
   "companyPositioning": {
     "positionInChain": "מיקום בשרשרת הערך: upstream/midstream/downstream",
-    "functionalRole": "תפקיד פונקציונלי אמיתי בתוך המערכת",
+    "functionalRole": "תפקיד פונקציונלי אמיתי במערכת",
     "positionQuality": "בריכת ערך או אזור תחרותי שחוק? נמק"
+  },
+  "managementAssessment": {
+    "ceoProfile": "CEO שם + רקע + נאמנות לחברה + ניסיון תעשייתי רלוונטי",
+    "skinInGame": "אחזקות פנים % + מה זה אומר על alignment עם בעלי מניות",
+    "trackRecord": "הצלחות/כישלונות ניהוליים מהותיים תחת הנהלה זו"
+  },
+  "marketSizing": {
+    "tam": "גודל שוק כולל (TAM) ב-$ + שוק ניתן לכיבוש (SAM/SOM) + מה מניע צמיחה",
+    "cagr": "קצב צמיחה שנתי ענפי (CAGR) % + השוואה לסקטור",
+    "pricingPower": "כוח תמחור: ראיות מהמספרים + גבולות + מה יגרום לשחיקה"
   },
   "competitiveAdvantage": {
     "differentiation": "בידול אמיתי שאי אפשר לשכפל",
-    "moat": "יתרון בר קיימא: network effects/switching costs/IP/cost advantage?",
+    "moat": "יתרון בר-קיימא: network effects/switching costs/IP/cost advantage/brand — עוצמה ועמידות",
     "competitiveLandscape": "מתחרים ישירים ועקיפים. עוצמת האיום"
   },
   "valueCaptureQuality": {
     "valueCapture": "האם לוכדת רווחיות אמיתית? ראיות מהמספרים שסופקו",
     "revenueQuality": "יציבות, חזרתיות, כוח תמחור. סוג הכנסות",
-    "warningSigns": "אלמנטים מדאיגים בנתונים - מה יכול להיות שגוי בתמחור?"
+    "warningSigns": "אלמנטים מדאיגים — מה יכול להיות שגוי בתמחור?"
+  },
+  "financialDeepDive": {
+    "roicVsWacc": "ROIC ${roicStr} — האם מעל WACC? האם החברה יוצרת ערך כלכלי אמיתי? ניתוח",
+    "interestCoverageInsight": "כיסוי ריבית ${interestCoverageStr} — משמעות לסיכון פירעון + האם החוב לצמיחה או הישרדות?",
+    "capexQuality": "CAPEX ${formatNum(capexAnnual)} (${capexToRev} מהכנסות) — ${capexTypeLabel} — השפעה על FCF עתידי",
+    "ebitdaToNetIncome": "EBITDA ${formatNum(financials?.ebitda)} vs רווח נקי — ניתוח ההפרש: פחת/הפחתות/ריבית/מסים ומשמעות"
   },
   "chainComparison": {
     "betterAlternatives": "חברות שתופסות ערך טוב יותר באותה שרשרת",
     "relativePositioning": "הבחירה הטובה ביותר בתעשייה? למה?"
   },
   "forwardLooking": {
-    "catalysts": "Repricing catalysts - מה יגרום לשוק לשנות תמחור?",
+    "catalysts": "Repricing catalysts — מה יגרום לשוק לשנות תמחור?",
     "bullCase": "תרחיש שורי: מה צריך לקרות? מכפלה פוטנציאלית?",
     "bearCase": "תרחיש דובי: סיכונים אמיתיים שיהרסו את התזה",
     "baseCase": "תרחיש בסיס: צמיחה ריאלית וכיוון ב-12 חודשים",
     "winConditions": "תנאים קריטיים שחייבים לקרות כדי לנצח"
   },
+  "valuationDCF": {
+    "bullDCF": "DCF שורי: הנחות צמיחה + WACC + שווי הוגן מחושב למניה",
+    "baseDCF": "DCF בסיס: הנחות מתונות + WACC + שווי הוגן מחושב למניה",
+    "bearDCF": "DCF דובי: הנחות שמרניות + WACC + שווי הוגן מחושב למניה",
+    "historicalMultiple": "P/E נוכחי ${q.trailingPE?.toFixed(1) ?? 'N/A'}x vs ממוצע היסטורי ענפי + האם המניה זולה/יקרה היסטורית?"
+  },
   "conclusion": {
-    "classification": "value_pool / hype / tactical / value_trap",
+    "classification": "value_pool | hype | tactical | value_trap",
     "classificationLabel": "מניית בריכת ערך / מניית הייפ / חוליה טקטית מעניינת / מלכודת ערך",
     "reasoning": "2-3 משפטים חדים עם ביסוס אמיתי",
     "actionableIdeas": "Long/Short/Pair/Watchlist עם היגיון ברור"
   },
   "eventAnalysis": {
-    "realityVsNarrative": "נתח את הדוח הרבעוני האחרון לפי המספרים שסופקו. הכנסות בפועל, שינוי QoQ, מה הכותרות אומרות לעומת המציאות",
+    "realityVsNarrative": "ניתוח הדוח הרבעוני האחרון לפי המספרים. הכנסות בפועל, שינוי QoQ, מה הכותרות אומרות לעומת המציאות",
     "secondOrderThinking": "מה השוק מפספס? השלכות לא-מיידיות מהמספרים",
     "capitalFlow": "לאן כסף יזרום בעקבות הנתונים? סקטורים/נכסים",
     "winners": "מי ירוויח מהמצב הנוכחי של ${companyName}?",
     "losers": "מי ייפגע? איפה החולשה נחשפת?",
-    "materiality": "רעש קצר טווח או שינוי מגמה? משמעות לחברה/סקטור",
+    "materiality": "רעש קצר טווח או שינוי מגמה? משמעות",
     "actionableInsights": "Long/Short/Pair/Watchlist ספציפי עם תזמון ונימוק"
+  },
+  "fiveYearForecast": "תחזית 2025-2030 שנה-שנה: קטליסטים, הכנסות צפויות %, מאורעות מרכזיים, נקודות מפנה. פסקה אחת קומפקטית.",
+  "kpiTracker": "5 KPI קריטיים לבדיקה ברבעון הבא. כל KPI: שם | ערך נוכחי | ספל אזהרה | מה זה אומר. פורמט: KPI1: ... | KPI2: ... וכו",
+  "riskMatrix": {
+    "supplyChain": "ספקים/לקוחות קריטיים + תלות + סיכוני ריכוז",
+    "preMortem": "Pre-Mortem: תרחיש שבו ב-2027 המניה ירדה 60% — מה גרם לכך?",
+    "thesisBreaker": "נתון/אירוע ספציפי שיהרוס את התזה לחלוטין + מה לצפות ברבעון הבא כ-warning sign"
   }
 }`;
 
@@ -378,7 +525,7 @@ ${dataContext}
     }
 
     const fallbackEvent = {
-      realityVsNarrative: "לא ניתן לנתח - בדוק שהטיקר נכון",
+      realityVsNarrative: "לא ניתן לנתח — בדוק שהטיקר נכון",
       secondOrderThinking: "N/A",
       capitalFlow: "N/A",
       winners: "N/A",
@@ -392,12 +539,19 @@ ${dataContext}
       companyName,
       systemUnderstanding: parsed.systemUnderstanding ?? {},
       companyPositioning: parsed.companyPositioning ?? {},
+      managementAssessment: parsed.managementAssessment ?? null,
+      marketSizing: parsed.marketSizing ?? null,
       competitiveAdvantage: parsed.competitiveAdvantage ?? {},
       valueCaptureQuality: parsed.valueCaptureQuality ?? {},
+      financialDeepDive: parsed.financialDeepDive ?? null,
       chainComparison: parsed.chainComparison ?? {},
       forwardLooking: parsed.forwardLooking ?? {},
+      valuationDCF: parsed.valuationDCF ?? null,
       conclusion: parsed.conclusion ?? {},
       eventAnalysis: parsed.eventAnalysis ?? fallbackEvent,
+      fiveYearForecast: parsed.fiveYearForecast ?? null,
+      kpiTracker: parsed.kpiTracker ?? null,
+      riskMatrix: parsed.riskMatrix ?? null,
       analystConsensus,
       generatedAt: new Date().toISOString(),
     });

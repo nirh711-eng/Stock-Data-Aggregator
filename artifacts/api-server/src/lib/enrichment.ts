@@ -107,6 +107,7 @@ export async function fetchFinnhub(ticker: string): Promise<FinnhubData | null> 
 export interface FmpData {
   incomeText: string;
   holdersText: string;
+  geoText: string;
 }
 
 type FmpIncome = {
@@ -114,19 +115,24 @@ type FmpIncome = {
   revenue: number; grossProfit: number; grossProfitRatio: number;
   operatingIncome: number; operatingIncomeRatio: number;
   netIncome: number; eps: number; ebitda: number;
+  interestExpense?: number;
   researchAndDevelopmentExpenses?: number;
 };
 type FmpHolder = { holder: string; shares: number; dateReported: string; change: number; changePercentage: number };
+type FmpGeoItem = Record<string, number | string>;
 
 export async function fetchFmp(ticker: string): Promise<FmpData | null> {
   if (!FMP_KEY) return null;
   try {
-    const [incomeRaw, holdersRaw] = await Promise.all([
+    const [incomeRaw, holdersRaw, geoRaw] = await Promise.all([
       fetchJson<FmpIncome[]>(
         `https://financialmodelingprep.com/api/v3/income-statement/${ticker}?period=quarter&limit=4&apikey=${FMP_KEY}`
       ),
       fetchJson<FmpHolder[]>(
         `https://financialmodelingprep.com/api/v3/institutional-holder/${ticker}?apikey=${FMP_KEY}`
+      ),
+      fetchJson<FmpGeoItem[]>(
+        `https://financialmodelingprep.com/api/v3/revenue-geographic-segmentation/${ticker}?structure=flat&apikey=${FMP_KEY}`
       ),
     ]);
 
@@ -134,7 +140,8 @@ export async function fetchFmp(ticker: string): Promise<FmpData | null> {
     const incomeText = stmts.length > 0
       ? stmts.map(q => {
           const rd = q.researchAndDevelopmentExpenses ? ` R&D=${fmtB(q.researchAndDevelopmentExpenses)}` : "";
-          return `  ${q.date} (${q.period}): Rev=${fmtB(q.revenue)} GP=${fmtB(q.grossProfit)} (${(q.grossProfitRatio * 100).toFixed(1)}%) OpInc=${fmtB(q.operatingIncome)} (${(q.operatingIncomeRatio * 100).toFixed(1)}%) Net=${fmtB(q.netIncome)} EPS=$${q.eps?.toFixed(2) ?? "N/A"} EBITDA=${fmtB(q.ebitda)}${rd}`;
+          const interest = q.interestExpense ? ` Interest=${fmtB(q.interestExpense)}` : "";
+          return `  ${q.date} (${q.period}): Rev=${fmtB(q.revenue)} GP=${fmtB(q.grossProfit)} (${(q.grossProfitRatio * 100).toFixed(1)}%) OpInc=${fmtB(q.operatingIncome)} (${(q.operatingIncomeRatio * 100).toFixed(1)}%) Net=${fmtB(q.netIncome)} EPS=$${q.eps?.toFixed(2) ?? "N/A"} EBITDA=${fmtB(q.ebitda)}${interest}${rd}`;
         }).join("\n")
       : "  לא זמין";
 
@@ -146,7 +153,23 @@ export async function fetchFmp(ticker: string): Promise<FmpData | null> {
         }).join("\n")
       : "  לא זמין";
 
-    return { incomeText, holdersText };
+    const geoItems = (Array.isArray(geoRaw) ? geoRaw : []).slice(0, 1);
+    let geoText = "  לא זמין";
+    if (geoItems.length > 0) {
+      const item = geoItems[0];
+      const entries = Object.entries(item)
+        .filter(([k, v]) => k !== "date" && typeof v === "number" && (v as number) > 0)
+        .sort(([, a], [, b]) => (b as number) - (a as number))
+        .slice(0, 6);
+      const total = entries.reduce((s, [, v]) => s + (v as number), 0);
+      geoText = entries.length > 0
+        ? `  ${String(item.date ?? "")}: ` + entries.map(([region, val]) =>
+            `${region}=${fmtB(val as number)} (${total > 0 ? ((val as number) / total * 100).toFixed(0) : "?"}%)`
+          ).join(" | ")
+        : "  לא זמין";
+    }
+
+    return { incomeText, holdersText, geoText };
   } catch {
     return null;
   }

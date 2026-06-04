@@ -123,6 +123,18 @@ export interface AnalysisCompanyPositioning {
   positionQuality: string;
 }
 
+export interface AnalysisManagement {
+  ceoProfile: string;
+  skinInGame: string;
+  trackRecord: string;
+}
+
+export interface AnalysisMarketSizing {
+  tam: string;
+  cagr: string;
+  pricingPower: string;
+}
+
 export interface AnalysisCompetitiveAdvantage {
   differentiation: string;
   moat: string;
@@ -133,6 +145,13 @@ export interface AnalysisValueCapture {
   valueCapture: string;
   revenueQuality: string;
   warningSigns: string;
+}
+
+export interface AnalysisFinancialDeepDive {
+  roicVsWacc: string;
+  interestCoverageInsight: string;
+  capexQuality: string;
+  ebitdaToNetIncome: string;
 }
 
 export interface AnalysisChainComparison {
@@ -146,6 +165,13 @@ export interface AnalysisForwardLooking {
   bearCase: string;
   baseCase: string;
   winConditions: string;
+}
+
+export interface AnalysisValuationDCF {
+  bullDCF: string;
+  baseDCF: string;
+  bearDCF: string;
+  historicalMultiple: string;
 }
 
 export type AnalysisConclusionClassification =
@@ -173,6 +199,12 @@ export interface AnalysisEvent {
   losers: string;
   materiality: string;
   actionableInsights: string;
+}
+
+export interface AnalysisRiskMatrix {
+  supplyChain: string;
+  preMortem: string;
+  thesisBreaker: string;
 }
 
 export interface AnalystAction {
@@ -204,12 +236,19 @@ export interface DeepAnalysis {
   companyName: string;
   systemUnderstanding: AnalysisSystemUnderstanding;
   companyPositioning: AnalysisCompanyPositioning;
+  managementAssessment?: AnalysisManagement | null;
+  marketSizing?: AnalysisMarketSizing | null;
   competitiveAdvantage: AnalysisCompetitiveAdvantage;
   valueCaptureQuality: AnalysisValueCapture;
+  financialDeepDive?: AnalysisFinancialDeepDive | null;
   chainComparison: AnalysisChainComparison;
   forwardLooking: AnalysisForwardLooking;
+  valuationDCF?: AnalysisValuationDCF | null;
   conclusion: AnalysisConclusion;
   eventAnalysis?: AnalysisEvent | null;
+  fiveYearForecast?: string | null;
+  kpiTracker?: string | null;
+  riskMatrix?: AnalysisRiskMatrix | null;
   analystConsensus?: AnalystConsensus | null;
   generatedAt: string;
 }

@@ -244,6 +244,20 @@ export const GetStockDeepAnalysisResponse = zod.object({
     functionalRole: zod.string(),
     positionQuality: zod.string(),
   }),
+  managementAssessment: zod
+    .object({
+      ceoProfile: zod.string(),
+      skinInGame: zod.string(),
+      trackRecord: zod.string(),
+    })
+    .nullish(),
+  marketSizing: zod
+    .object({
+      tam: zod.string(),
+      cagr: zod.string(),
+      pricingPower: zod.string(),
+    })
+    .nullish(),
   competitiveAdvantage: zod.object({
     differentiation: zod.string(),
     moat: zod.string(),
@@ -254,6 +268,14 @@ export const GetStockDeepAnalysisResponse = zod.object({
     revenueQuality: zod.string(),
     warningSigns: zod.string(),
   }),
+  financialDeepDive: zod
+    .object({
+      roicVsWacc: zod.string(),
+      interestCoverageInsight: zod.string(),
+      capexQuality: zod.string(),
+      ebitdaToNetIncome: zod.string(),
+    })
+    .nullish(),
   chainComparison: zod.object({
     betterAlternatives: zod.string(),
     relativePositioning: zod.string(),
@@ -265,6 +287,14 @@ export const GetStockDeepAnalysisResponse = zod.object({
     baseCase: zod.string(),
     winConditions: zod.string(),
   }),
+  valuationDCF: zod
+    .object({
+      bullDCF: zod.string(),
+      baseDCF: zod.string(),
+      bearDCF: zod.string(),
+      historicalMultiple: zod.string(),
+    })
+    .nullish(),
   conclusion: zod.object({
     classification: zod.enum(["value_pool", "hype", "tactical", "value_trap"]),
     classificationLabel: zod.string(),
@@ -280,6 +310,15 @@ export const GetStockDeepAnalysisResponse = zod.object({
       losers: zod.string(),
       materiality: zod.string(),
       actionableInsights: zod.string(),
+    })
+    .nullish(),
+  fiveYearForecast: zod.string().nullish(),
+  kpiTracker: zod.string().nullish(),
+  riskMatrix: zod
+    .object({
+      supplyChain: zod.string(),
+      preMortem: zod.string(),
+      thesisBreaker: zod.string(),
     })
     .nullish(),
   analystConsensus: zod

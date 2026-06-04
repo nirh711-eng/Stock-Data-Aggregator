@@ -438,18 +438,39 @@ components:
           $ref: "#/components/schemas/AnalysisSystemUnderstanding"
         companyPositioning:
           $ref: "#/components/schemas/AnalysisCompanyPositioning"
+        managementAssessment:
+          $ref: "#/components/schemas/AnalysisManagement"
+          nullable: true
+        marketSizing:
+          $ref: "#/components/schemas/AnalysisMarketSizing"
+          nullable: true
         competitiveAdvantage:
           $ref: "#/components/schemas/AnalysisCompetitiveAdvantage"
         valueCaptureQuality:
           $ref: "#/components/schemas/AnalysisValueCapture"
+        financialDeepDive:
+          $ref: "#/components/schemas/AnalysisFinancialDeepDive"
+          nullable: true
         chainComparison:
           $ref: "#/components/schemas/AnalysisChainComparison"
         forwardLooking:
           $ref: "#/components/schemas/AnalysisForwardLooking"
+        valuationDCF:
+          $ref: "#/components/schemas/AnalysisValuationDCF"
+          nullable: true
         conclusion:
           $ref: "#/components/schemas/AnalysisConclusion"
         eventAnalysis:
           $ref: "#/components/schemas/AnalysisEvent"
+          nullable: true
+        fiveYearForecast:
+          type: string
+          nullable: true
+        kpiTracker:
+          type: string
+          nullable: true
+        riskMatrix:
+          $ref: "#/components/schemas/AnalysisRiskMatrix"
           nullable: true
         analystConsensus:
           $ref: "#/components/schemas/AnalystConsensus"
@@ -601,6 +622,82 @@ components:
         - losers
         - materiality
         - actionableInsights
+
+    AnalysisManagement:
+      type: object
+      properties:
+        ceoProfile:
+          type: string
+        skinInGame:
+          type: string
+        trackRecord:
+          type: string
+      required:
+        - ceoProfile
+        - skinInGame
+        - trackRecord
+
+    AnalysisMarketSizing:
+      type: object
+      properties:
+        tam:
+          type: string
+        cagr:
+          type: string
+        pricingPower:
+          type: string
+      required:
+        - tam
+        - cagr
+        - pricingPower
+
+    AnalysisFinancialDeepDive:
+      type: object
+      properties:
+        roicVsWacc:
+          type: string
+        interestCoverageInsight:
+          type: string
+        capexQuality:
+          type: string
+        ebitdaToNetIncome:
+          type: string
+      required:
+        - roicVsWacc
+        - interestCoverageInsight
+        - capexQuality
+        - ebitdaToNetIncome
+
+    AnalysisValuationDCF:
+      type: object
+      properties:
+        bullDCF:
+          type: string
+        baseDCF:
+          type: string
+        bearDCF:
+          type: string
+        historicalMultiple:
+          type: string
+      required:
+        - bullDCF
+        - baseDCF
+        - bearDCF
+        - historicalMultiple
+
+    AnalysisRiskMatrix:
+      type: object
+      properties:
+        supplyChain:
+          type: string
+        preMortem:
+          type: string
+        thesisBreaker:
+          type: string
+      required:
+        - supplyChain
+        - preMortem
+        - thesisBreaker
 
     DailyAnalysis:
       type: object
