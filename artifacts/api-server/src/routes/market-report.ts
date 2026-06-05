@@ -208,7 +208,7 @@ function buildImpliedSectorRotation(
 }
 
 router.get("/market/daily-report", async (req, res) => {
-  const cacheKey = "market_daily_report_v3";
+  const cacheKey = "market_daily_report_v4";
   const cached = getCache<unknown>(cacheKey);
   if (cached) { res.json(cached); return; }
 
@@ -427,14 +427,18 @@ ${dataContext}
 
     const aiResponse = await openai.chat.completions.create({
       model: "gpt-5-mini",
-      max_completion_tokens: 2800,
+      max_completion_tokens: 8192,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
     });
 
-    const parsedPulse = robustParseJson(aiResponse.choices[0]?.message?.content ?? "");
+    const rawContent = aiResponse.choices[0]?.message?.content ?? "";
+    const parsedPulse = robustParseJson(rawContent);
+    if (!parsedPulse) {
+      req.log?.warn({ rawContent: rawContent.slice(0, 500), finishReason: aiResponse.choices[0]?.finish_reason }, "AI pulse JSON parse failed");
+    }
 
     const report = {
       generatedAt: new Date().toISOString(),
