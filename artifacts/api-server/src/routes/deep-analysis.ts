@@ -36,7 +36,9 @@ interface QuarterlyData {
 }
 
 function fetchQuarterlyTimeseries(ticker: string): Promise<QuarterlyData[]> {
-  return new Promise((resolve) => {
+  const TIMEOUT_MS = 7000;
+
+  const fetchPromise = new Promise<QuarterlyData[]>((resolve) => {
     const period1 = Math.floor((Date.now() - 2 * 365 * 24 * 60 * 60 * 1000) / 1000);
     const period2 = Math.floor(Date.now() / 1000);
     const types = [
@@ -49,7 +51,7 @@ function fetchQuarterlyTimeseries(ticker: string): Promise<QuarterlyData[]> {
     ].join(",");
     const url = `https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${ticker}?type=${encodeURIComponent(types)}&period1=${period1}&period2=${period2}&merge=false`;
 
-    https.get(url, { headers: { "User-Agent": "Mozilla/5.0", Accept: "application/json" } }, (res) => {
+    const req = https.get(url, { headers: { "User-Agent": "Mozilla/5.0", Accept: "application/json" } }, (res) => {
       let data = "";
       res.on("data", (c) => (data += c));
       res.on("end", () => {
@@ -95,8 +97,16 @@ function fetchQuarterlyTimeseries(ticker: string): Promise<QuarterlyData[]> {
           resolve([]);
         }
       });
-    }).on("error", () => resolve([]));
+    });
+    req.on("error", () => resolve([]));
+    req.setTimeout(TIMEOUT_MS, () => { req.destroy(); resolve([]); });
   });
+
+  const timeoutPromise = new Promise<QuarterlyData[]>((resolve) =>
+    setTimeout(() => resolve([]), TIMEOUT_MS + 500)
+  );
+
+  return Promise.race([fetchPromise, timeoutPromise]);
 }
 
 function robustParseJson(str: string): Record<string, unknown> | null {
@@ -109,6 +119,17 @@ function robustParseJson(str: string): Record<string, unknown> | null {
   return null;
 }
 
+// ── Server-side cache (60 min per ticker) ─────────────────────────────────────
+const _deepCache = new Map<string, { data: unknown; expires: number }>();
+function getDeepCache<T>(key: string): T | null {
+  const e = _deepCache.get(key);
+  if (!e || Date.now() > e.expires) return null;
+  return e.data as T;
+}
+function setDeepCache(key: string, data: unknown) {
+  _deepCache.set(key, { data, expires: Date.now() + 60 * 60 * 1000 });
+}
+
 router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
   const parse = GetStockDeepAnalysisParams.safeParse(req.params);
   if (!parse.success) {
@@ -119,10 +140,14 @@ router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
   const { ticker } = parse.data;
   const upperTicker = ticker.toUpperCase();
 
+  // Serve from cache if available (60 min)
+  const cached = getDeepCache(upperTicker);
+  if (cached) { res.json(cached); return; }
+
   try {
     // Fetch all data sources in parallel
-    const [quoteResult, qsResult, quarterlyData, finnhubData, fmpData, fredData, yNewsData] = await Promise.all([
-      yahooFinance.quote(upperTicker).catch(() => null),
+    const QS_TIMEOUT = 12000;
+    const qsWithTimeout = Promise.race([
       yahooFinance.quoteSummary(upperTicker, {
         modules: [
           "assetProfile",
@@ -138,6 +163,12 @@ router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
           "cashflowStatementHistoryQuarterly",
         ],
       }).catch(() => null),
+      new Promise<null>((r) => setTimeout(() => r(null), QS_TIMEOUT)),
+    ]);
+
+    const [quoteResult, qsResult, quarterlyData, finnhubData, fmpData, fredData, yNewsData] = await Promise.all([
+      yahooFinance.quote(upperTicker).catch(() => null),
+      qsWithTimeout,
       fetchQuarterlyTimeseries(upperTicker),
       fetchFinnhub(upperTicker),
       fetchFmp(upperTicker),
@@ -508,7 +539,7 @@ ${dataContext}
 
     const response = await openai.chat.completions.create({
       model: "gpt-5-mini",
-      max_completion_tokens: 4096,
+      max_completion_tokens: 8192,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
@@ -516,10 +547,17 @@ ${dataContext}
     });
 
     const raw = response.choices[0]?.message?.content ?? "";
+    const finishReason = response.choices[0]?.finish_reason;
+
+    if (!raw || raw.trim() === "") {
+      req.log?.warn({ finishReason, upperTicker }, "Deep analysis AI returned empty content — ticker may lack sufficient data");
+      res.status(422).json({ error: "Insufficient data", message: `לא ניתן לנתח את ${upperTicker} — ייתכן שהטיקר לא ידוע או שאין מספיק נתונים פיננסיים עבורו.` });
+      return;
+    }
 
     const parsed = robustParseJson(raw);
     if (!parsed) {
-      req.log?.warn({ raw: raw.slice(0, 500) }, "Failed to parse AI JSON response");
+      req.log?.warn({ raw: raw.slice(0, 500), finishReason }, "Failed to parse AI JSON response");
       res.status(500).json({ error: "Parse error", message: "Failed to parse AI analysis" });
       return;
     }
@@ -534,7 +572,7 @@ ${dataContext}
       actionableInsights: "N/A",
     };
 
-    res.json({
+    const result = {
       ticker: upperTicker,
       companyName,
       systemUnderstanding: parsed.systemUnderstanding ?? {},
@@ -554,7 +592,10 @@ ${dataContext}
       riskMatrix: parsed.riskMatrix ?? null,
       analystConsensus,
       generatedAt: new Date().toISOString(),
-    });
+    };
+
+    setDeepCache(upperTicker, result);
+    res.json(result);
   } catch (err) {
     req.log?.error({ err }, "Failed to run deep analysis");
     res.status(500).json({ error: "Internal server error", message: "Failed to generate deep analysis" });

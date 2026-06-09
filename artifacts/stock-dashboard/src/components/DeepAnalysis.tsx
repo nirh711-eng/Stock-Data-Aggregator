@@ -41,10 +41,12 @@ export function DeepAnalysis({ ticker }: DeepAnalysisProps) {
   const queryClient = useQueryClient();
   const [isRequested, setIsRequested] = useState(false);
 
-  const { data, isLoading, isFetching } = useGetStockDeepAnalysis(ticker, {
+  const { data, isLoading, isFetching, isError, error } = useGetStockDeepAnalysis(ticker, {
     query: {
       enabled: !!ticker && isRequested,
       queryKey: getGetStockDeepAnalysisQueryKey(ticker),
+      staleTime: 60 * 60 * 1000,
+      retry: false,
     }
   });
 
@@ -62,11 +64,26 @@ export function DeepAnalysis({ ticker }: DeepAnalysisProps) {
         <div className="max-w-md space-y-2">
           <h3 className="text-xl font-bold font-sans">Hedge Fund Deep Analysis</h3>
           <p className="text-muted-foreground text-sm">
-            ניתוח מוסדי מלא — 15 שלבים: שרשרת ערך, הנהלה, ROIC, DCF 3 תרחישים, תחזית 5 שנים, מטריצת סיכונים ועוד. התהליך לוקח 30-50 שניות.
+            ניתוח מוסדי מלא — 15 שלבים: שרשרת ערך, הנהלה, ROIC, DCF 3 תרחישים, תחזית 5 שנים, מטריצת סיכונים ועוד. התהליך לוקח 60-90 שניות בפעם הראשונה ונשמר cache לשעה.
           </p>
         </div>
         <Button onClick={handleLoad} size="lg" className="font-semibold px-8">
           הפעל ניתוח עמוק
+        </Button>
+      </div>
+    );
+  }
+
+  if (isError) {
+    const errMsg = (error as { response?: { data?: { message?: string } } })?.response?.data?.message
+      ?? "שגיאה בטעינת הניתוח. ייתכן שהטיקר אינו נתמך או שאין נתונים פיננסיים מספיקים.";
+    return (
+      <div className="flex flex-col items-center justify-center p-12 bg-card border border-border rounded-xl mt-8 text-center space-y-4">
+        <AlertTriangle className="w-10 h-10 text-rose-500" />
+        <h3 className="text-lg font-bold text-rose-500">לא ניתן לבצע ניתוח</h3>
+        <p className="text-sm text-muted-foreground max-w-sm">{errMsg}</p>
+        <Button variant="outline" size="sm" onClick={() => { setIsRequested(false); }}>
+          חזרה
         </Button>
       </div>
     );
