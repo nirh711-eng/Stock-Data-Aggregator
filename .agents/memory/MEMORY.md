@@ -1,4 +1,5 @@
-- [Deep analysis timing](deep-analysis-timing.md) — gpt-5-mini deep analysis ~47s with enrichment; 50s proxy hard limit; keep enrichment context lean.
+- [Deep analysis timing](deep-analysis-timing.md) — gpt-5-mini deep analysis ~58s cold; 0.17s cached; 60-min server-side in-memory cache per ticker.
 - [Enrichment module](enrichment-module.md) — multi-source enrichment in enrichment.ts; limits tuned to stay under proxy timeout.
-- [OpenAI proxy quirks](openai-proxy-quirks.md) — gpt-5-mini via Replit proxy: max_completion_tokens=4096 for deep analysis, 3000 for daily; no json_object response_format.
+- [OpenAI proxy quirks](openai-proxy-quirks.md) — gpt-5-mini via Replit proxy: max_completion_tokens=8192; no json_object response_format; import from @workspace/integrations-openai-ai-server.
 - [yahoo-finance2 v3](yahoo-finance2-v3.md) — requires `new YahooFinance()` constructor; suppressNotices in constructor not in quoteSummary.
+- [Bottleneck route](bottleneck-route.md) — /api/bottlenecks: AI market structure analysis, 6h cache, uses @workspace/integrations-openai-ai-server not raw openai.

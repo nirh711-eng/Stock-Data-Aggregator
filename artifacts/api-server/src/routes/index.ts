@@ -6,12 +6,14 @@ import dailyAnalysisRouter from "./daily-analysis";
 import marketReportRouter from "./market-report";
 import watchlistRouter from "./watchlist";
 import sectorsRouter from "./sectors";
+import bottlenecksRouter from "./bottlenecks";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(watchlistRouter);
 router.use(sectorsRouter);
+router.use(bottlenecksRouter);
 router.use(stocksRouter);
 router.use(deepAnalysisRouter);
 router.use(dailyAnalysisRouter);
