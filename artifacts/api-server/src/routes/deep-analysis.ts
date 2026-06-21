@@ -750,6 +750,10 @@ router.get("/stocks/:ticker/deep-analysis", (req, res) => {
     return;
   }
 
+  // Prevent browser/proxy caching — polling responses must always be fresh
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.set("Pragma", "no-cache");
+
   const upperTicker = req.params.ticker.toUpperCase();
 
   // Serve from cache immediately

@@ -46,7 +46,7 @@ export function DeepAnalysis({ ticker }: DeepAnalysisProps) {
   const { data, isLoading, isFetching, isError, error } = useQuery<any>({
     queryKey: QUERY_KEY(ticker),
     queryFn: async () => {
-      const res = await fetch(`/api/stocks/${encodeURIComponent(ticker)}/deep-analysis`);
+      const res = await fetch(`/api/stocks/${encodeURIComponent(ticker)}/deep-analysis`, { cache: "no-store" });
       if (!res.ok) {
         const body = await res.json().catch(() => ({})) as { message?: string };
         throw new Error(body.message ?? `Error ${res.status}`);
