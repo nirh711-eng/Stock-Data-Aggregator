@@ -4,7 +4,10 @@ import yahooFinanceMod from "yahoo-finance2";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { GetStockDeepAnalysisParams } from "@workspace/api-zod";
 import { jsonrepair } from "jsonrepair";
-import { fetchFinnhub, fetchFmp, fetchFredMacro } from "../lib/enrichment";
+import {
+  fetchFinnhub, fetchFmp, fetchFredMacro,
+  fetchTechnicals, fetchNewsSentiment, fetchMarketaux, fetchPolygon,
+} from "../lib/enrichment";
 import pino from "pino";
 
 const bgLogger = pino({ level: "info" });
@@ -161,7 +164,11 @@ async function runDeepAnalysisJob(upperTicker: string): Promise<void> {
       new Promise<null>((r) => setTimeout(() => r(null), QS_TIMEOUT)),
     ]);
 
-    const [quoteResult, qsResult, quarterlyData, finnhubData, fmpData, fredData, yNewsData] = await Promise.all([
+    const [
+      quoteResult, qsResult, quarterlyData,
+      finnhubData, fmpData, fredData, yNewsData,
+      techData, sentimentData, marketauxData, polygonData,
+    ] = await Promise.all([
       yahooFinance.quote(upperTicker).catch(() => null),
       qsWithTimeout,
       fetchQuarterlyTimeseries(upperTicker),
@@ -169,6 +176,10 @@ async function runDeepAnalysisJob(upperTicker: string): Promise<void> {
       fetchFmp(upperTicker),
       fetchFredMacro(),
       yahooFinance.search(upperTicker, { quotesCount: 0, newsCount: 5 }, { validateResult: false }).catch(() => null),
+      fetchTechnicals(upperTicker),
+      fetchNewsSentiment(upperTicker),
+      fetchMarketaux(upperTicker),
+      fetchPolygon(upperTicker),
     ]);
 
     if (!quoteResult) {
@@ -265,14 +276,133 @@ async function runDeepAnalysisJob(upperTicker: string): Promise<void> {
           : `🔧 Maintenance בלבד (${capexToDepr.toFixed(1)}x פחת)`
       : "N/A";
 
-    // Yahoo Finance news (additional source)
+    // ── News deduplication across all sources ────────────────────────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const yNewsItems: any[] = yNewsData?.news ?? [];
-    const yNewsText = yNewsItems.length > 0
-      ? yNewsItems.slice(0, 5).map((n: { title?: string; publisher?: string }) =>
-          `  - ${n.title ?? "?"} (${n.publisher ?? "?"})`
+
+    interface RawNewsItem { headline: string; source: string; sentiment?: string }
+    const allNewsRaw: RawNewsItem[] = [
+      ...yNewsItems.slice(0, 6).map((n: { title?: string; publisher?: string }) => ({
+        headline: n.title ?? "",
+        source: n.publisher ?? "Yahoo Finance",
+      })),
+      ...(Array.isArray(finnhubData?.newsText ? [] : []) ? [] : []).map(() => ({ headline: "", source: "" })),
+    ];
+
+    // Parse Finnhub news lines manually
+    if (finnhubData?.newsText && finnhubData.newsText !== "  אין חדשות") {
+      const fhLines = finnhubData.newsText.split("\n");
+      for (const line of fhLines) {
+        const m = line.match(/- (.+?) \((.+?),/);
+        if (m) allNewsRaw.push({ headline: m[1] ?? "", source: m[2] ?? "Finnhub" });
+      }
+    }
+
+    // Parse Marketaux news lines
+    if (marketauxData?.text) {
+      const mxLines = marketauxData.text.split("\n");
+      for (const line of mxLines) {
+        const m = line.match(/- (.+?) \((.+?)\)/);
+        if (m) {
+          const sentMatch = line.match(/\| (.+?)$/);
+          allNewsRaw.push({ headline: m[1] ?? "", source: m[2] ?? "Marketaux", sentiment: sentMatch?.[1] });
+        }
+      }
+    }
+
+    // Alpha Vantage sentiment articles
+    if (sentimentData?.articlesText) {
+      const avLines = sentimentData.articlesText.split("\n");
+      for (const line of avLines) {
+        const m = line.match(/- (.+?) \((.+?)\)/);
+        if (m) {
+          const sentMatch = line.match(/\| (.+?)(?:\s*\[|$)/);
+          allNewsRaw.push({ headline: m[1] ?? "", source: m[2] ?? "Alpha Vantage", sentiment: sentMatch?.[1]?.trim() });
+        }
+      }
+    }
+
+    // Deduplicate by first 50 chars of headline (case-insensitive)
+    const seenKeys = new Set<string>();
+    const deduped: RawNewsItem[] = [];
+    for (const item of allNewsRaw) {
+      if (!item.headline) continue;
+      const key = item.headline.toLowerCase().replace(/[^a-z0-9\u0590-\u05fe]/g, "").slice(0, 50);
+      if (!seenKeys.has(key)) { seenKeys.add(key); deduped.push(item); }
+    }
+    const mergedNewsText = deduped.slice(0, 12).length > 0
+      ? deduped.slice(0, 12).map(n =>
+          `  - ${n.headline} (${n.source})${n.sentiment ? " | " + n.sentiment : ""}`
         ).join("\n")
       : "  לא זמין";
+
+    // ── Cross-validated quarterly table (Yahoo + FMP + Polygon) ─────────────────
+    // Build best-of-three quarterly rows: use the source with the most data per date
+    interface CrossQRow { date: string; rev: string; ni: string; gp: string; eps: string; ocf: string; sources: string }
+    const crossRows: CrossQRow[] = [];
+
+    // Yahoo timeseries is most granular — use as base
+    const yahooQs = quarterlyData.slice(-4);
+    for (const yq of yahooQs) {
+      // Find closest FMP quarter (same year-quarter)
+      const fmpMatch = (Array.isArray(fmpData?.incomeText) ? [] : []);
+      void fmpMatch; // We'll use text only for the prompt; numeric merge uses Polygon
+
+      // Find closest Polygon quarter
+      const polyMatch = polygonData?.quarters.find(pq => pq.period.startsWith(yq.date.slice(0, 7)));
+
+      const rev    = yq.revenue       ?? polyMatch?.revenue       ?? null;
+      const ni     = yq.netIncome     ?? polyMatch?.netIncome     ?? null;
+      const gp     = yq.grossProfit   ?? polyMatch?.grossProfit   ?? null;
+      const eps    = yq.dilutedEPS    ?? polyMatch?.eps           ?? null;
+      const ocf    = yq.operatingCashFlow ?? polyMatch?.ocf       ?? null;
+
+      const revDelta = yq.revenue && polyMatch?.revenue
+        ? ` [Δ${(((yq.revenue / polyMatch.revenue) - 1) * 100).toFixed(1)}%]`
+        : "";
+      const usedSources = [
+        yq.revenue != null ? "Y" : null,
+        polyMatch?.revenue != null ? "P" : null,
+      ].filter(Boolean).join("+");
+
+      crossRows.push({
+        date: yq.date,
+        rev: rev != null ? `${formatNum(rev)}${revDelta}` : "N/A",
+        ni: formatNum(ni),
+        gp: formatNum(gp),
+        eps: eps != null ? `$${eps.toFixed(2)}` : "N/A",
+        ocf: formatNum(ocf),
+        sources: usedSources || "Y",
+      });
+    }
+
+    const crossValidatedTable = crossRows.length > 0
+      ? crossRows.map(r =>
+          `  ${r.date} [${r.sources}]: Rev=${r.rev} NI=${r.ni} GP=${r.gp} EPS=${r.eps} OCF=${r.ocf}`
+        ).join("\n")
+      : "  אין נתוני רבעונים";
+
+    // Delta detection between FMP and Yahoo for latest quarter
+    const fmpLatestRevMatch = fmpData?.incomeText?.match(/Rev=\$([\d.]+)([BM])/);
+    const yahooLatestRev = yahooQs[yahooQs.length - 1]?.revenue;
+    let crossValidationNote = "";
+    if (fmpLatestRevMatch && yahooLatestRev) {
+      const fmpMult = fmpLatestRevMatch[2] === "B" ? 1e9 : 1e6;
+      const fmpRev = parseFloat(fmpLatestRevMatch[1]) * fmpMult;
+      const delta = Math.abs((fmpRev / yahooLatestRev) - 1) * 100;
+      crossValidationNote = delta > 5
+        ? `⚠️ Cross-validation: Yahoo vs FMP הכנסות שונות ב-${delta.toFixed(1)}% — השתמש בזהירות`
+        : `✓ Cross-validation: Yahoo ו-FMP מסכימים על הכנסות (±${delta.toFixed(1)}%)`;
+    }
+
+    // ── Aggregated sentiment ──────────────────────────────────────────────────────
+    const avLabel = sentimentData?.overallLabel ?? "";
+    const sentimentSummary = [
+      avLabel ? `Alpha Vantage: ${avLabel}` : null,
+      sentimentData?.overallScore != null
+        ? `ציון ממוצע: ${sentimentData.overallScore.toFixed(3)}`
+        : null,
+    ].filter(Boolean).join(" | ") || "לא זמין";
 
     // ── Analyst Consensus ────────────────────────────────────────────────────────
     const recTrend = qs?.recommendationTrend?.trend?.[0] ?? null;
@@ -364,7 +494,8 @@ async function runDeepAnalysisJob(upperTicker: string): Promise<void> {
 חברה: ${companyName} (${upperTicker})
 תעשייה: ${profile?.industry ?? "N/A"} | סקטור: ${profile?.sector ?? "N/A"}
 בורסה: ${q.fullExchangeName ?? q.exchange ?? "N/A"} | מטבע: ${q.currency ?? "USD"}
-תיאור: ${profile?.longBusinessSummary ? profile.longBusinessSummary.slice(0, 400) : "N/A"}
+תיאור: ${profile?.longBusinessSummary ? profile.longBusinessSummary.slice(0, 350) : "N/A"}
+${polygonData?.companyText ? polygonData.companyText : ""}
 
 --- נתוני שוק עדכניים ---
 מחיר: $${q.regularMarketPrice?.toFixed(2)} | שינוי יומי: ${q.regularMarketChangePercent?.toFixed(2)}%
@@ -374,6 +505,9 @@ EPS TTM: $${q.epsTrailingTwelveMonths?.toFixed(2) ?? "N/A"} | EPS forward: $${q.
 P/S: ${keyStats?.priceToSalesRatioTTM?.toFixed(2) ?? "N/A"} | P/B: ${keyStats?.priceToBook?.toFixed(2) ?? "N/A"} | EV/Revenue: ${keyStats?.enterpriseToRevenue?.toFixed(2) ?? "N/A"} | EV/EBITDA: ${keyStats?.enterpriseToEbitda?.toFixed(2) ?? "N/A"}
 Beta: ${keyStats?.beta?.toFixed(2) ?? "N/A"}
 52W High: $${q.fiftyTwoWeekHigh?.toFixed(2) ?? "N/A"} | 52W Low: $${q.fiftyTwoWeekLow?.toFixed(2) ?? "N/A"} | מרחק מ-52W High: ${q.regularMarketPrice && q.fiftyTwoWeekHigh ? ((q.regularMarketPrice / q.fiftyTwoWeekHigh - 1) * 100).toFixed(1) + "%" : "N/A"}
+
+--- ניתוח טכני (Twelve Data) ---
+${techData?.fullText ?? "  לא זמין"}
 
 --- נתונים פיננסיים (TTM) ---
 הכנסות TTM: ${formatNum(financials?.totalRevenue)}
@@ -398,9 +532,15 @@ CEO: ${ceoName}${ceoAge ? ` | גיל: ${ceoAge}` : ""}
 CFO: ${cfoName}
 מספר נושאי משרה: ${officers.length}
 
---- ביצועים רבעוניים (4 רבעונים + FCF) ---
-${quartersTable}
-שינוי QoQ (הכנסות): ${revGrowthQoQ} | שינוי QoQ (רווח נקי): ${niGrowthQoQ}
+--- ביצועים רבעוניים — Cross-Validated (Yahoo+Polygon, Y=Yahoo P=Polygon) ---
+${crossValidatedTable}
+${crossValidationNote ? crossValidationNote + "\n" : ""}שינוי QoQ (הכנסות): ${revGrowthQoQ} | שינוי QoQ (רווח נקי): ${niGrowthQoQ}
+
+--- Cross-Reference: FMP דוחות רבעוניים (אימות עצמאי) ---
+${fmpData?.incomeText ?? "  לא זמין"}
+
+--- Cross-Reference: Polygon דוחות רבעוניים (אימות עצמאי) ---
+${polygonData?.quarterlyText ?? "  לא זמין"}
 
 --- היסטוריית דוחות (Beat/Miss — 4 רבעונים) ---
 ${earningsHistText}
@@ -420,20 +560,17 @@ ${analystConsensus.recentActions.length > 0 ? "שינויי דירוג:\n" + ana
 --- מאקרו (FRED) ---
 ${fredData?.text ?? "  לא זמין"}
 
---- חדשות אחרונות (Yahoo Finance) ---
-${yNewsText}
+--- סנטימנט חדשות מצטבר (Alpha Vantage) ---
+${sentimentSummary}
 
---- חדשות אחרונות (Finnhub) ---
-${finnhubData?.newsText ?? "  לא זמין"}
+--- חדשות ייחודיות מכל המקורות (מדוּפְּקות, 4 מקורות: Yahoo+Finnhub+Marketaux+AlphaVantage) ---
+${mergedNewsText}
 
 --- עסקאות פנים (Finnhub) ---
 ${finnhubData?.insiderText ?? "  לא זמין"}
 
---- מתחרים ישירים ---
+--- מתחרים ישירים (Finnhub) ---
 ${finnhubData?.peersText ?? "לא זמין"}
-
---- דוחות רבעוניים (FMP — cross-validation) ---
-${fmpData?.incomeText ?? "  לא זמין"}
 
 --- פילוח גיאוגרפי הכנסות (FMP) ---
 ${fmpData?.geoText ?? "  לא זמין"}

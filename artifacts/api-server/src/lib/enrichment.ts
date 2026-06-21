@@ -51,6 +51,7 @@ const FRED_KEY      = process.env.FRED_API_KEY            ?? "";
 const TWELVE_KEY    = process.env.TWELVE_DATA_API_KEY     ?? "";
 const AV_KEY        = process.env.ALPHA_VANTAGE_API_KEY   ?? "";
 const MARKETAUX_KEY = process.env.MARKETAUX_API_KEY       ?? "";
+const POLYGON_KEY   = process.env.POLYGON_API_KEY         ?? "";
 
 // ── Finnhub: news + insider transactions + peers ──────────────────────────────
 
@@ -294,6 +295,84 @@ export async function fetchNewsSentiment(ticker: string): Promise<NewsSentimentD
     }).join("\n");
 
     return { overallLabel: overall, overallScore, articlesText };
+  } catch {
+    return null;
+  }
+}
+
+// ── Polygon.io: financials cross-validation + company details ─────────────────
+
+export interface PolygonData {
+  quarterlyText: string;
+  companyText: string;
+  quarters: Array<{
+    period: string;
+    revenue: number | null;
+    netIncome: number | null;
+    grossProfit: number | null;
+    operatingIncome: number | null;
+    eps: number | null;
+    ocf: number | null;
+  }>;
+}
+
+type PolygonFinResult = {
+  fiscal_period?: string;
+  fiscal_year?: string;
+  start_date?: string;
+  financials?: {
+    income_statement?: Record<string, { value?: number }>;
+    cash_flow_statement?: Record<string, { value?: number }>;
+  };
+};
+type PolygonFinResponse = { results?: PolygonFinResult[] };
+type PolygonTickerDetails = { results?: { description?: string; total_employees?: number; weighted_shares_outstanding?: number } };
+
+export async function fetchPolygon(ticker: string): Promise<PolygonData | null> {
+  if (!POLYGON_KEY) return null;
+  try {
+    const [finRaw, detailsRaw] = await Promise.all([
+      fetchJson<PolygonFinResponse>(
+        `https://api.polygon.io/vX/reference/financials?ticker=${ticker}&timeframe=quarterly&limit=4&apiKey=${POLYGON_KEY}`,
+        8000
+      ),
+      fetchJson<PolygonTickerDetails>(
+        `https://api.polygon.io/v3/reference/tickers/${ticker}?apiKey=${POLYGON_KEY}`,
+        5000
+      ),
+    ]);
+
+    const results = finRaw?.results ?? [];
+    const quarters = results.map(r => {
+      const inc = r.financials?.income_statement ?? {};
+      const cf  = r.financials?.cash_flow_statement ?? {};
+      return {
+        period: r.start_date ?? `${r.fiscal_year ?? "?"} ${r.fiscal_period ?? "?"}`,
+        revenue:         inc["revenues"]?.value ?? inc["net_revenues"]?.value ?? null,
+        netIncome:       inc["net_income_loss"]?.value ?? null,
+        grossProfit:     inc["gross_profit"]?.value ?? null,
+        operatingIncome: inc["operating_income_loss"]?.value ?? null,
+        eps:             inc["basic_earnings_per_share"]?.value ?? inc["diluted_earnings_per_share"]?.value ?? null,
+        ocf:             cf["net_cash_flow_from_operating_activities"]?.value ?? null,
+      };
+    });
+
+    const quarterlyText = quarters.length > 0
+      ? quarters.map(q =>
+          `  ${q.period}: Rev=${fmtB(q.revenue)} NI=${fmtB(q.netIncome)} GP=${fmtB(q.grossProfit)} OpInc=${fmtB(q.operatingIncome)} EPS=$${q.eps?.toFixed(2) ?? "N/A"} OCF=${fmtB(q.ocf)}`
+        ).join("\n")
+      : "  לא זמין";
+
+    const d = detailsRaw?.results;
+    const companyText = d
+      ? [
+          d.total_employees ? `עובדים: ${d.total_employees.toLocaleString()}` : null,
+          d.weighted_shares_outstanding ? `מניות בהון: ${(d.weighted_shares_outstanding / 1e6).toFixed(0)}M` : null,
+          d.description ? `תיאור (Polygon): ${d.description.slice(0, 300)}` : null,
+        ].filter(Boolean).join(" | ")
+      : "";
+
+    return { quarterlyText, companyText, quarters };
   } catch {
     return null;
   }
