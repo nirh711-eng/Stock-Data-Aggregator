@@ -5,6 +5,9 @@ import { openai } from "@workspace/integrations-openai-ai-server";
 import { GetStockDeepAnalysisParams } from "@workspace/api-zod";
 import { jsonrepair } from "jsonrepair";
 import { fetchFinnhub, fetchFmp, fetchFredMacro } from "../lib/enrichment";
+import pino from "pino";
+
+const bgLogger = pino({ level: "info" });
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const YahooFinance = yahooFinanceMod as any;
@@ -130,20 +133,12 @@ function setDeepCache(key: string, data: unknown) {
   _deepCache.set(key, { data, expires: Date.now() + 60 * 60 * 1000 });
 }
 
-router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
-  const parse = GetStockDeepAnalysisParams.safeParse(req.params);
-  if (!parse.success) {
-    res.status(400).json({ error: "Bad request", message: "Invalid ticker" });
-    return;
-  }
+// ── Background job tracking ────────────────────────────────────────────────────
+const _runningJobs = new Set<string>();
+const _jobErrors = new Map<string, string>();
 
-  const { ticker } = parse.data;
-  const upperTicker = ticker.toUpperCase();
-
-  // Serve from cache if available (60 min)
-  const cached = getDeepCache(upperTicker);
-  if (cached) { res.json(cached); return; }
-
+// ── Full analysis extracted for background execution ──────────────────────────
+async function runDeepAnalysisJob(upperTicker: string): Promise<void> {
   try {
     // Fetch all data sources in parallel
     const QS_TIMEOUT = 12000;
@@ -177,7 +172,7 @@ router.get("/stocks/:ticker/deep-analysis", async (req, res) => {
     ]);
 
     if (!quoteResult) {
-      res.status(404).json({ error: "Not found", message: `Ticker ${upperTicker} not found` });
+      _jobErrors.set(upperTicker, `Ticker ${upperTicker} not found`);
       return;
     }
 
@@ -552,15 +547,15 @@ ${dataContext}
     const finishReason = response.choices[0]?.finish_reason;
 
     if (!raw || raw.trim() === "") {
-      req.log?.warn({ finishReason, upperTicker }, "Deep analysis AI returned empty content — ticker may lack sufficient data");
-      res.status(422).json({ error: "Insufficient data", message: `לא ניתן לנתח את ${upperTicker} — ייתכן שהטיקר לא ידוע או שאין מספיק נתונים פיננסיים עבורו.` });
+      bgLogger.warn({ finishReason, upperTicker }, "Deep analysis AI returned empty content — ticker may lack sufficient data");
+      _jobErrors.set(upperTicker, `לא ניתן לנתח את ${upperTicker} — ייתכן שהטיקר לא ידוע או שאין מספיק נתונים פיננסיים עבורו.`);
       return;
     }
 
     const parsed = robustParseJson(raw);
     if (!parsed) {
-      req.log?.warn({ raw: raw.slice(0, 500), finishReason }, "Failed to parse AI JSON response");
-      res.status(500).json({ error: "Parse error", message: "Failed to parse AI analysis" });
+      bgLogger.warn({ raw: raw.slice(0, 500), finishReason }, "Failed to parse AI JSON response");
+      _jobErrors.set(upperTicker, "שגיאה בעיבוד תשובת AI — נסה שוב");
       return;
     }
 
@@ -597,11 +592,57 @@ ${dataContext}
     };
 
     setDeepCache(upperTicker, result);
-    res.json(result);
+    bgLogger.info({ upperTicker }, "Deep analysis job complete — cached");
   } catch (err) {
-    req.log?.error({ err }, "Failed to run deep analysis");
-    res.status(500).json({ error: "Internal server error", message: "Failed to generate deep analysis" });
+    bgLogger.error({ err, upperTicker }, "Deep analysis background job failed");
+    _jobErrors.set(upperTicker, "שגיאה פנימית — נסה שוב בעוד מספר שניות");
+  } finally {
+    _runningJobs.delete(upperTicker);
   }
+}
+
+// ── Route: poll-friendly GET ──────────────────────────────────────────────────
+// First call: starts background job, returns {status:"running"} immediately.
+// Subsequent calls while running: returns {status:"running"}.
+// After completion: returns full result from cache.
+// On error: returns {status:"error", message}.
+router.get("/stocks/:ticker/deep-analysis", (req, res) => {
+  const parse = GetStockDeepAnalysisParams.safeParse(req.params);
+  if (!parse.success) {
+    res.status(400).json({ error: "Bad request", message: "Invalid ticker" });
+    return;
+  }
+
+  const upperTicker = req.params.ticker.toUpperCase();
+
+  // Serve from cache immediately
+  const cached = getDeepCache(upperTicker);
+  if (cached) { res.json(cached); return; }
+
+  // Job failed previously — report and clear
+  const jobErr = _jobErrors.get(upperTicker);
+  if (jobErr) {
+    _jobErrors.delete(upperTicker);
+    res.status(422).json({ error: "Analysis failed", message: jobErr });
+    return;
+  }
+
+  // Job already running — tell client to keep polling
+  if (_runningJobs.has(upperTicker)) {
+    res.json({ status: "running", ticker: upperTicker });
+    return;
+  }
+
+  // Start background job and return immediately
+  _runningJobs.add(upperTicker);
+  res.json({ status: "running", ticker: upperTicker });
+
+  // Fire-and-forget — errors handled inside the function
+  runDeepAnalysisJob(upperTicker).catch((err) => {
+    bgLogger.error({ err, upperTicker }, "Unhandled error in runDeepAnalysisJob");
+    _jobErrors.set(upperTicker, "שגיאה לא צפויה — נסה שוב");
+    _runningJobs.delete(upperTicker);
+  });
 });
 
 export default router;

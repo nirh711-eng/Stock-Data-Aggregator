@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useState, useEffect, useRef } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { 
   BrainCircuit, 
   RefreshCw, 
@@ -22,12 +22,9 @@ import {
   Calculator,
   Calendar,
   Activity,
-  Skull
+  Skull,
+  Clock
 } from "lucide-react";
-import { 
-  useGetStockDeepAnalysis, 
-  getGetStockDeepAnalysisQueryKey 
-} from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -37,22 +34,63 @@ interface DeepAnalysisProps {
   ticker: string;
 }
 
+const QUERY_KEY = (ticker: string) => ["deep-analysis", ticker];
+
 export function DeepAnalysis({ ticker }: DeepAnalysisProps) {
   const queryClient = useQueryClient();
   const [isRequested, setIsRequested] = useState(false);
+  const [elapsedSecs, setElapsedSecs] = useState(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const { data, isLoading, isFetching, isError, error } = useGetStockDeepAnalysis(ticker, {
-    query: {
-      enabled: !!ticker && isRequested,
-      queryKey: getGetStockDeepAnalysisQueryKey(ticker),
-      staleTime: 60 * 60 * 1000,
-      retry: false,
-    }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, isLoading, isFetching, isError, error } = useQuery<any>({
+    queryKey: QUERY_KEY(ticker),
+    queryFn: async () => {
+      const res = await fetch(`/api/stocks/${encodeURIComponent(ticker)}/deep-analysis`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { message?: string };
+        throw new Error(body.message ?? `Error ${res.status}`);
+      }
+      return res.json();
+    },
+    enabled: !!ticker && isRequested,
+    staleTime: 60 * 60 * 1000,
+    retry: false,
+    // Poll every 5 seconds while job is running
+    refetchInterval: (q) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const d = q.state.data as any;
+      return d?.status === "running" ? 5000 : false;
+    },
   });
 
-  const handleLoad = () => { setIsRequested(true); };
+  const isRunning = data?.status === "running";
+
+  // Elapsed timer — runs while polling
+  useEffect(() => {
+    if (isRequested && (isLoading || isRunning)) {
+      if (!timerRef.current) {
+        setElapsedSecs(0);
+        timerRef.current = setInterval(() => setElapsedSecs(s => s + 1), 1000);
+      }
+    } else {
+      if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    }
+    return () => { if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; } };
+  }, [isRequested, isLoading, isRunning]);
+
+  // Reset state when ticker changes
+  useEffect(() => {
+    setIsRequested(false);
+    setElapsedSecs(0);
+  }, [ticker]);
+
+  const handleLoad = () => { setElapsedSecs(0); setIsRequested(true); };
   const handleRegenerate = () => {
-    queryClient.invalidateQueries({ queryKey: getGetStockDeepAnalysisQueryKey(ticker) });
+    setElapsedSecs(0);
+    queryClient.removeQueries({ queryKey: QUERY_KEY(ticker) });
+    setIsRequested(false);
+    setTimeout(() => setIsRequested(true), 50);
   };
 
   if (!isRequested) {
@@ -75,8 +113,7 @@ export function DeepAnalysis({ ticker }: DeepAnalysisProps) {
   }
 
   if (isError) {
-    const errMsg = (error as { response?: { data?: { message?: string } } })?.response?.data?.message
-      ?? "שגיאה בטעינת הניתוח. ייתכן שהטיקר אינו נתמך או שאין נתונים פיננסיים מספיקים.";
+    const errMsg = (error as Error)?.message ?? "שגיאה בטעינת הניתוח. ייתכן שהטיקר אינו נתמך או שאין נתונים פיננסיים מספיקים.";
     return (
       <div className="flex flex-col items-center justify-center p-12 bg-card border border-border rounded-xl mt-8 text-center space-y-4">
         <AlertTriangle className="w-10 h-10 text-rose-500" />
@@ -89,21 +126,60 @@ export function DeepAnalysis({ ticker }: DeepAnalysisProps) {
     );
   }
 
-  if (isLoading || (isFetching && !data)) {
+  if (isLoading || isRunning || (isFetching && !data?.companyName)) {
+    const mins = Math.floor(elapsedSecs / 60);
+    const secs = elapsedSecs % 60;
+    const elapsedLabel = mins > 0 ? `${mins}:${String(secs).padStart(2, "0")}` : `${secs}s`;
+    const steps = [
+      "אוסף נתונים פיננסיים מ-Yahoo Finance",
+      "טוען נתוני שוק ו-KPIs",
+      "מנתח שרשרת ערך ומיקום בשוק",
+      "מעריך הנהלה ויתרון תחרותי",
+      "מחשב ROIC, DCF ותרחישי תמחור",
+      "בונה מטריצת סיכונים ותחזית 5 שנים",
+      "מסכם מסקנות מוסדיות",
+    ];
+    const currentStep = Math.min(Math.floor(elapsedSecs / 12), steps.length - 1);
     return (
       <div className="mt-8 space-y-6" dir="rtl">
-        <div className="flex items-center gap-4 text-primary animate-pulse py-4">
-          <BrainCircuit className="w-6 h-6" />
-          <span className="text-lg font-medium">מנתח {ticker} — 15 שלבים מוסדיים...</span>
+        <div className="bg-card border border-border rounded-xl p-6 space-y-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3 text-primary">
+              <BrainCircuit className="w-6 h-6 animate-pulse" />
+              <span className="text-base font-semibold">מנתח {ticker} — ניתוח קרן גידור מלא</span>
+            </div>
+            <span className="flex items-center gap-1.5 text-sm font-mono text-muted-foreground">
+              <Clock className="w-3.5 h-3.5" />
+              {elapsedLabel}
+            </span>
+          </div>
+          <div className="space-y-2">
+            {steps.map((step, i) => (
+              <div key={i} className={`flex items-center gap-2.5 text-sm transition-all duration-500 ${
+                i < currentStep ? "text-positive" :
+                i === currentStep ? "text-primary font-medium" :
+                "text-muted-foreground/40"
+              }`}>
+                <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                  i < currentStep ? "bg-positive" :
+                  i === currentStep ? "bg-primary animate-pulse" :
+                  "bg-muted-foreground/20"
+                }`} />
+                {step}
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-muted-foreground/60 text-center pt-1">
+            הניתוח רץ ברקע — הדף יתעדכן אוטומטית כשיסתיים. אל תסגור את הדף.
+          </p>
         </div>
-        <div className="space-y-6">
-          {[1, 2, 3, 4, 5].map(i => (
+        <div className="space-y-4">
+          {[1, 2, 3].map(i => (
             <Card key={i} className="border-border">
               <CardHeader><Skeleton className="h-6 w-1/3" /></CardHeader>
-              <CardContent className="space-y-4">
+              <CardContent className="space-y-3">
                 <Skeleton className="h-4 w-full" />
                 <Skeleton className="h-4 w-5/6" />
-                <Skeleton className="h-4 w-4/6" />
               </CardContent>
             </Card>
           ))}
@@ -112,10 +188,10 @@ export function DeepAnalysis({ ticker }: DeepAnalysisProps) {
     );
   }
 
-  if (!data) {
+  if (!data?.companyName) {
     return (
       <div className="mt-8 p-6 text-center text-destructive bg-destructive/10 rounded-lg">
-        Failed to load analysis. Please try again.
+        לא נטענו נתונים — נסה שוב.
       </div>
     );
   }
@@ -411,7 +487,8 @@ export function DeepAnalysis({ ticker }: DeepAnalysisProps) {
                   <div>
                     <div className="text-xs text-muted-foreground uppercase tracking-wide mb-2">שינויי דירוג אחרונים</div>
                     <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                      {data.analystConsensus.recentActions.map((action, i) => {
+                      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                      {data.analystConsensus.recentActions.map((action: any, i: number) => {
                         const isUpgrade = action.action === "up";
                         const isNew = action.action === "init" || action.action === "reit";
                         const grade = action.toGrade.toLowerCase();
