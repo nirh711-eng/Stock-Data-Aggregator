@@ -398,23 +398,23 @@ export function DeepAnalysis({ ticker }: DeepAnalysisProps) {
               <Field label="קטליסטים לשינוי תמחור" content={data.forwardLooking.catalysts} />
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-4">
+              <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
                 <div className="text-green-400 font-bold mb-2 flex items-center gap-2 text-sm">
                   <div className="w-2 h-2 rounded-full bg-green-500" /> תרחיש שורי
                 </div>
-                <p className="text-sm text-green-100/80 leading-relaxed">{data.forwardLooking.bullCase}</p>
+                <p className="text-sm text-foreground font-medium leading-relaxed">{data.forwardLooking.bullCase}</p>
               </div>
-              <div className="bg-gray-500/5 border border-gray-500/20 rounded-lg p-4">
-                <div className="text-gray-400 font-bold mb-2 flex items-center gap-2 text-sm">
-                  <div className="w-2 h-2 rounded-full bg-gray-500" /> תרחיש בסיס
+              <div className="bg-slate-500/10 border border-slate-500/30 rounded-lg p-4">
+                <div className="text-slate-300 font-bold mb-2 flex items-center gap-2 text-sm">
+                  <div className="w-2 h-2 rounded-full bg-slate-400" /> תרחיש בסיס
                 </div>
-                <p className="text-sm text-gray-300 leading-relaxed">{data.forwardLooking.baseCase}</p>
+                <p className="text-sm text-foreground font-medium leading-relaxed">{data.forwardLooking.baseCase}</p>
               </div>
-              <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-4">
+              <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
                 <div className="text-red-400 font-bold mb-2 flex items-center gap-2 text-sm">
                   <div className="w-2 h-2 rounded-full bg-red-500" /> תרחיש דובי
                 </div>
-                <p className="text-sm text-red-100/80 leading-relaxed">{data.forwardLooking.bearCase}</p>
+                <p className="text-sm text-foreground font-medium leading-relaxed">{data.forwardLooking.bearCase}</p>
               </div>
             </div>
             <div className="border-t border-border/30 pt-3">
@@ -533,31 +533,31 @@ export function DeepAnalysis({ ticker }: DeepAnalysisProps) {
             </CardHeader>
             <CardContent className="pt-4 space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-green-500/5 border border-green-500/20 rounded-lg p-4">
+                <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4">
                   <div className="text-green-400 font-bold mb-2 flex items-center gap-2 text-sm">
                     <div className="w-2 h-2 rounded-full bg-green-500" /> DCF שורי
                   </div>
-                  <p className="text-sm text-green-100/80 leading-relaxed">{data.valuationDCF.bullDCF}</p>
+                  <p className="text-sm text-foreground font-medium leading-relaxed">{data.valuationDCF.bullDCF}</p>
                 </div>
-                <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-4">
+                <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
                   <div className="text-blue-400 font-bold mb-2 flex items-center gap-2 text-sm">
                     <div className="w-2 h-2 rounded-full bg-blue-500" /> DCF בסיס
                   </div>
-                  <p className="text-sm text-blue-100/80 leading-relaxed">{data.valuationDCF.baseDCF}</p>
+                  <p className="text-sm text-foreground font-medium leading-relaxed">{data.valuationDCF.baseDCF}</p>
                 </div>
-                <div className="bg-red-500/5 border border-red-500/20 rounded-lg p-4">
+                <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
                   <div className="text-red-400 font-bold mb-2 flex items-center gap-2 text-sm">
                     <div className="w-2 h-2 rounded-full bg-red-500" /> DCF דובי
                   </div>
-                  <p className="text-sm text-red-100/80 leading-relaxed">{data.valuationDCF.bearDCF}</p>
+                  <p className="text-sm text-foreground font-medium leading-relaxed">{data.valuationDCF.bearDCF}</p>
                 </div>
               </div>
-              <div className="bg-yellow-500/5 border border-yellow-500/20 rounded-lg p-4">
+              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4">
                 <div className="text-yellow-400 text-xs font-bold uppercase tracking-wide mb-2">
                   <Scale className="w-3 h-3 inline mr-1" />
                   השוואה היסטורית למכפיל
                 </div>
-                <p className="text-sm text-foreground/90 leading-relaxed">{data.valuationDCF.historicalMultiple}</p>
+                <p className="text-sm text-foreground font-medium leading-relaxed">{data.valuationDCF.historicalMultiple}</p>
               </div>
             </CardContent>
           </Card>
