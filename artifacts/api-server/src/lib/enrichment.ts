@@ -553,3 +553,155 @@ export async function fetchMarketaux(ticker: string): Promise<MarketauxData | nu
     return null;
   }
 }
+
+// ── Structured news articles (MarketAux + Finnhub) ────────────────────────────
+
+export interface NewsArticle {
+  title: string;
+  url: string;
+  source: string;
+  publishedAt: string;
+  sentiment: "positive" | "negative" | "neutral" | null;
+  summary: string;
+}
+
+export interface NewsData {
+  articles: NewsArticle[];
+}
+
+type MxArticleFull = {
+  title: string;
+  url: string;
+  description: string;
+  source: string;
+  published_at: string;
+  entities?: Array<{ symbol: string; sentiment_score: number | null }>;
+};
+
+type FinnhubNewsItemFull = { headline: string; source: string; url: string; summary: string; datetime: number };
+
+function mxSentiment(score: number | null | undefined): NewsArticle["sentiment"] {
+  if (score == null) return null;
+  if (score > 0.1) return "positive";
+  if (score < -0.1) return "negative";
+  return "neutral";
+}
+
+export async function fetchNewsArticles(ticker: string): Promise<NewsData | null> {
+  const cacheKey = `news_articles_${ticker}_${today()}`;
+  const cached = getCache<NewsData>(cacheKey);
+  if (cached) return cached;
+
+  const seen = new Set<string>();
+  const articles: NewsArticle[] = [];
+
+  const [mxData, fnNews] = await Promise.all([
+    MARKETAUX_KEY ? fetchJson<{ data?: MxArticleFull[] }>(
+      `https://api.marketaux.com/v1/news/all?symbols=${ticker}&filter_entities=true&language=en&limit=10&api_token=${MARKETAUX_KEY}`,
+      8000
+    ) : Promise.resolve(null),
+    FINNHUB_KEY ? fetchJson<FinnhubNewsItemFull[]>(
+      `https://finnhub.io/api/v1/company-news?symbol=${ticker}&from=${daysAgo(7)}&to=${today()}&token=${FINNHUB_KEY}`,
+      8000
+    ) : Promise.resolve(null),
+  ]);
+
+  for (const a of mxData?.data ?? []) {
+    if (!a.title || !a.url) continue;
+    const key = a.title.slice(0, 60).toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const ent = a.entities?.find(e => e.symbol === ticker);
+    articles.push({
+      title: a.title,
+      url: a.url,
+      source: a.source,
+      publishedAt: a.published_at,
+      sentiment: mxSentiment(ent?.sentiment_score),
+      summary: a.description ?? "",
+    });
+  }
+
+  for (const a of (Array.isArray(fnNews) ? fnNews : []).slice(0, 15)) {
+    if (!a.headline || !a.url) continue;
+    const key = a.headline.slice(0, 60).toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    articles.push({
+      title: a.headline,
+      url: a.url,
+      source: a.source,
+      publishedAt: new Date(a.datetime * 1000).toISOString(),
+      sentiment: null,
+      summary: a.summary ?? "",
+    });
+  }
+
+  if (articles.length === 0) return null;
+  const result: NewsData = { articles: articles.slice(0, 20) };
+  setCache(cacheKey, result, 30 * 60 * 1000);
+  return result;
+}
+
+// ── StockTwits ────────────────────────────────────────────────────────────────
+
+export interface StockTwit {
+  id: number;
+  body: string;
+  createdAt: string;
+  username: string;
+  sentiment: "Bullish" | "Bearish" | null;
+  url: string;
+}
+
+export interface StockTwitsData {
+  twits: StockTwit[];
+  bullishCount: number;
+  bearishCount: number;
+  totalCount: number;
+  sentimentLabel: string;
+}
+
+type StRawMessage = {
+  id: number;
+  body: string;
+  created_at: string;
+  user: { username: string };
+  entities: { sentiment: { basic: "Bullish" | "Bearish" } | null } | null;
+};
+
+export async function fetchStockTwits(ticker: string): Promise<StockTwitsData | null> {
+  const slot = Math.floor(Date.now() / (15 * 60 * 1000));
+  const cacheKey = `stocktwits_${ticker}_${slot}`;
+  const cached = getCache<StockTwitsData>(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const raw = await fetchJson<{ messages: StRawMessage[] }>(
+      `https://api.stocktwits.com/api/2/streams/symbol/${ticker}.json`,
+      8000
+    );
+    const messages = raw?.messages ?? [];
+    if (messages.length === 0) return null;
+
+    const twits: StockTwit[] = messages.slice(0, 20).map(m => ({
+      id: m.id,
+      body: m.body,
+      createdAt: m.created_at,
+      username: m.user.username,
+      sentiment: m.entities?.sentiment?.basic ?? null,
+      url: `https://stocktwits.com/${m.user.username}/message/${m.id}`,
+    }));
+
+    const bullishCount = twits.filter(t => t.sentiment === "Bullish").length;
+    const bearishCount = twits.filter(t => t.sentiment === "Bearish").length;
+    const ratio = bullishCount / (bullishCount + bearishCount || 1);
+    const sentimentLabel = ratio > 0.6 ? "שורי" : ratio < 0.4 ? "דובי" : "מעורב";
+
+    const result: StockTwitsData = { twits, bullishCount, bearishCount, totalCount: twits.length, sentimentLabel };
+    setCache(cacheKey, result, 15 * 60 * 1000);
+    return result;
+  } catch {
+    return null;
+  }
+}

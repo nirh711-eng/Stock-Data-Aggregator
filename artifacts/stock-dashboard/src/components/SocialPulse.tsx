@@ -1,14 +1,16 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Search, MessageSquare, Twitter, ExternalLink,
-  TrendingUp, TrendingDown, Minus, RefreshCw, Clock,
+  Search, MessageSquare, ExternalLink,
+  TrendingUp, TrendingDown, Minus, RefreshCw,
+  Newspaper, BarChart2,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+
+// ── Types ──────────────────────────────────────────────────────────────────────
 
 interface RedditPost {
   title: string;
@@ -17,6 +19,24 @@ interface RedditPost {
   numComments: number;
   sentiment: "bullish" | "bearish" | "neutral";
   permalink: string;
+}
+
+interface NewsArticle {
+  title: string;
+  url: string;
+  source: string;
+  publishedAt: string;
+  sentiment: "positive" | "negative" | "neutral" | null;
+  summary: string;
+}
+
+interface StockTwit {
+  id: number;
+  body: string;
+  createdAt: string;
+  username: string;
+  sentiment: "Bullish" | "Bearish" | null;
+  url: string;
 }
 
 interface SocialData {
@@ -29,92 +49,117 @@ interface SocialData {
     totalMentions: number;
     sentimentLabel: string;
   } | null;
-  twitter: null;
+  news: { articles: NewsArticle[] } | null;
+  stocktwits: {
+    twits: StockTwit[];
+    bullishCount: number;
+    bearishCount: number;
+    totalCount: number;
+    sentimentLabel: string;
+  } | null;
   generatedAt: string;
 }
 
 const POPULAR_TICKERS = ["AAPL", "TSLA", "NVDA", "MSFT", "META", "AMZN"];
 
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
 function SentimentBar({ bullish, bearish, neutral }: { bullish: number; bearish: number; neutral: number }) {
   const total = bullish + bearish + neutral || 1;
-  const bPct = (bullish / total) * 100;
-  const rPct = (bearish / total) * 100;
-  const nPct = (neutral / total) * 100;
   return (
-    <div className="w-full h-2 rounded-full overflow-hidden flex gap-px">
-      <div className="bg-emerald-500 transition-all" style={{ width: `${bPct}%` }} title={`שורי ${bullish}`} />
-      <div className="bg-zinc-600 transition-all" style={{ width: `${nPct}%` }} title={`נייטרלי ${neutral}`} />
-      <div className="bg-red-500 transition-all" style={{ width: `${rPct}%` }} title={`דובי ${bearish}`} />
+    <div className="w-full h-1.5 rounded-full overflow-hidden flex gap-px">
+      <div className="bg-emerald-500 transition-all" style={{ width: `${(bullish / total) * 100}%` }} />
+      <div className="bg-zinc-600 transition-all" style={{ width: `${(neutral / total) * 100}%` }} />
+      <div className="bg-red-500 transition-all" style={{ width: `${(bearish / total) * 100}%` }} />
     </div>
   );
 }
 
-function SentimentIcon({ sentiment }: { sentiment: "bullish" | "bearish" | "neutral" }) {
-  if (sentiment === "bullish") return <TrendingUp className="w-3.5 h-3.5 text-emerald-400 shrink-0" />;
-  if (sentiment === "bearish") return <TrendingDown className="w-3.5 h-3.5 text-red-400 shrink-0" />;
-  return <Minus className="w-3.5 h-3.5 text-zinc-500 shrink-0" />;
+function SentimentIcon({ s }: { s: "bullish" | "bearish" | "neutral" | "Bullish" | "Bearish" | "positive" | "negative" | null }) {
+  const norm = s?.toLowerCase();
+  if (norm === "bullish" || norm === "positive") return <TrendingUp className="w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5" />;
+  if (norm === "bearish" || norm === "negative") return <TrendingDown className="w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5" />;
+  return <Minus className="w-3.5 h-3.5 text-zinc-500 shrink-0 mt-0.5" />;
 }
+
+function SentimentBadge({ s }: { s: string | null }) {
+  if (!s) return null;
+  const norm = s.toLowerCase();
+  const cls =
+    norm === "bullish" || norm === "positive"
+      ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+      : norm === "bearish" || norm === "negative"
+      ? "bg-red-500/15 text-red-400 border-red-500/30"
+      : "bg-zinc-500/15 text-zinc-400 border-zinc-500/30";
+  const label =
+    norm === "bullish" || norm === "positive" ? "שורי" :
+    norm === "bearish" || norm === "negative" ? "דובי" : "נייטרלי";
+  return <span className={`text-[10px] px-1.5 py-0.5 rounded border font-semibold ${cls}`}>{label}</span>;
+}
+
+function relativeTime(iso: string): string {
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (diff < 60) return `לפני ${diff}ש׳`;
+  if (diff < 3600) return `לפני ${Math.floor(diff / 60)}ד׳`;
+  if (diff < 86400) return `לפני ${Math.floor(diff / 3600)}ש״`;
+  return `לפני ${Math.floor(diff / 86400)} ימים`;
+}
+
+function SummaryHeader({
+  bullish, bearish, neutral, total, label,
+}: { bullish: number; bearish: number; neutral: number; total: number; label: string }) {
+  const cls =
+    label === "שורי" ? "border-emerald-500/40 text-emerald-400 bg-emerald-500/10" :
+    label === "דובי" ? "border-red-500/40 text-red-400 bg-red-500/10" :
+    "border-yellow-500/40 text-yellow-400 bg-yellow-500/10";
+  return (
+    <div className="p-3 bg-muted/20 rounded-xl border border-border/40 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-muted-foreground uppercase tracking-wide">{total} תוצאות</span>
+        <Badge variant="outline" className={`text-xs font-bold border px-2 py-0.5 ${cls}`}>{label}</Badge>
+      </div>
+      <SentimentBar bullish={bullish} bearish={bearish} neutral={neutral} />
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />{bullish} שורי</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-zinc-500 inline-block" />{neutral} נייטרלי</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-500 inline-block" />{bearish} דובי</span>
+      </div>
+    </div>
+  );
+}
+
+// ── Reddit Panel ───────────────────────────────────────────────────────────────
 
 function RedditPanel({ data, ticker }: { data: SocialData["reddit"]; ticker: string }) {
   if (!data || data.posts.length === 0) {
     return (
-      <div className="py-14 text-center space-y-3">
+      <div className="py-14 text-center space-y-2">
         <MessageSquare className="w-8 h-8 text-muted-foreground/40 mx-auto" />
-        <p className="text-muted-foreground text-sm">לא נמצאו פוסטים עבור <span className="font-mono text-foreground">{ticker}</span> השבוע</p>
+        <p className="text-sm text-muted-foreground">לא נמצאו פוסטים עבור <span className="font-mono text-foreground">{ticker}</span> השבוע</p>
       </div>
     );
   }
-
-  const sentimentColor =
-    data.sentimentLabel === "שורי" ? "border-emerald-500/50 text-emerald-400 bg-emerald-500/10" :
-    data.sentimentLabel === "דובי" ? "border-red-500/50 text-red-400 bg-red-500/10" :
-    "border-yellow-500/50 text-yellow-400 bg-yellow-500/10";
-
   return (
     <div className="space-y-4">
-      {/* Sentiment summary header */}
-      <div className="flex items-center gap-3 p-4 bg-muted/20 rounded-xl border border-border/40">
-        <div className="flex-1 space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground uppercase tracking-wide">סנטימנט כולל — {data.totalMentions} פוסטים</span>
-            <Badge variant="outline" className={`text-xs font-bold border px-2 py-0.5 ${sentimentColor}`}>
-              {data.sentimentLabel}
-            </Badge>
-          </div>
-          <SentimentBar bullish={data.bullishCount} bearish={data.bearishCount} neutral={data.neutralCount} />
-          <div className="flex items-center gap-4 text-xs">
-            <span className="text-emerald-400 font-semibold">🟢 שורי: {data.bullishCount}</span>
-            <span className="text-red-400 font-semibold">🔴 דובי: {data.bearishCount}</span>
-            <span className="text-muted-foreground">⚪ נייטרלי: {data.neutralCount}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Post list */}
+      <SummaryHeader
+        bullish={data.bullishCount} bearish={data.bearishCount}
+        neutral={data.neutralCount} total={data.totalMentions}
+        label={data.sentimentLabel}
+      />
       <div className="space-y-2">
         {data.posts.map((post, i) => (
-          <div key={i} className={`group flex items-start gap-3 p-3 rounded-lg border transition-colors hover:bg-muted/20 ${
-            post.sentiment === "bullish" ? "border-emerald-500/20 bg-emerald-500/5" :
-            post.sentiment === "bearish" ? "border-red-500/20 bg-red-500/5" :
-            "border-border/30 bg-muted/5"
-          }`}>
-            <div className="mt-0.5">
-              <SentimentIcon sentiment={post.sentiment} />
-            </div>
+          <div key={i} className="flex items-start gap-3 p-3 rounded-lg hover:bg-muted/20 transition-colors group">
+            <SentimentIcon s={post.sentiment} />
             <div className="flex-1 min-w-0">
-              <a
-                href={post.permalink}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-sm text-foreground/90 hover:text-foreground leading-snug line-clamp-2 flex items-start gap-1 group/link"
-              >
-                <span>{post.title}</span>
-                <ExternalLink className="w-3 h-3 shrink-0 mt-0.5 opacity-0 group-hover/link:opacity-60 transition-opacity" />
+              <a href={post.permalink} target="_blank" rel="noopener noreferrer"
+                className="text-sm text-foreground/85 hover:text-foreground transition-colors flex items-start gap-1 group/link leading-snug">
+                <span className="line-clamp-2">{post.title}</span>
+                <ExternalLink className="w-3 h-3 shrink-0 mt-0.5 opacity-0 group/link:opacity-60 transition-opacity" />
               </a>
-              <div className="flex items-center gap-2 mt-1.5 text-xs text-muted-foreground">
+              <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
                 <span className="text-orange-400/80 font-medium">{post.subreddit}</span>
-                {post.score > 0 && <><span className="text-muted-foreground/50">·</span><span>⬆ {post.score.toLocaleString()}</span></>}
-                {post.numComments > 0 && <><span className="text-muted-foreground/50">·</span><span>💬 {post.numComments.toLocaleString()}</span></>}
+                {post.score > 0 && <><span className="opacity-40">·</span><span>⬆ {post.score.toLocaleString()}</span></>}
+                {post.numComments > 0 && <><span className="opacity-40">·</span><span>💬 {post.numComments}</span></>}
               </div>
             </div>
           </div>
@@ -124,30 +169,104 @@ function RedditPanel({ data, ticker }: { data: SocialData["reddit"]; ticker: str
   );
 }
 
-function TwitterPanel() {
+// ── News Panel ─────────────────────────────────────────────────────────────────
+
+function NewsPanel({ data, ticker }: { data: SocialData["news"]; ticker: string }) {
+  if (!data || data.articles.length === 0) {
+    return (
+      <div className="py-14 text-center space-y-2">
+        <Newspaper className="w-8 h-8 text-muted-foreground/40 mx-auto" />
+        <p className="text-sm text-muted-foreground">לא נמצאו כתבות עבור <span className="font-mono text-foreground">{ticker}</span></p>
+      </div>
+    );
+  }
+  const pos = data.articles.filter(a => a.sentiment === "positive").length;
+  const neg = data.articles.filter(a => a.sentiment === "negative").length;
+  const neu = data.articles.filter(a => !a.sentiment || a.sentiment === "neutral").length;
+  const ratio = pos / (pos + neg || 1);
+  const label = ratio > 0.6 ? "שורי" : ratio < 0.4 ? "דובי" : "מעורב";
+
   return (
-    <div className="py-16 text-center space-y-5">
-      <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#1DA1F2]/10 border border-[#1DA1F2]/20 mx-auto">
-        <Twitter className="w-7 h-7 text-[#1DA1F2]" />
-      </div>
+    <div className="space-y-4">
+      <SummaryHeader bullish={pos} bearish={neg} neutral={neu} total={data.articles.length} label={label} />
       <div className="space-y-2">
-        <h3 className="text-base font-semibold text-foreground">Twitter / X — בקרוב</h3>
-        <p className="text-sm text-muted-foreground max-w-sm mx-auto leading-relaxed">
-          אינטגרציית Twitter תופעל דרך <span className="font-mono text-foreground/70 text-xs bg-muted px-1.5 py-0.5 rounded">Apify</span> — שירות scraping שמאפשר גישה ל-Tweets בזמן אמת ללא Twitter API.
-        </p>
-      </div>
-      <div className="inline-flex items-center gap-2 text-xs text-muted-foreground border border-border/40 rounded-lg px-4 py-2.5 bg-muted/10">
-        <Clock className="w-3.5 h-3.5" />
-        <span>פתח חשבון ב-apify.com וצור מפתח API — ונחבר אותו</span>
+        {data.articles.map((a, i) => (
+          <div key={i} className="flex items-start gap-3 p-3 rounded-lg hover:bg-muted/20 transition-colors group">
+            <SentimentIcon s={a.sentiment} />
+            <div className="flex-1 min-w-0">
+              <a href={a.url} target="_blank" rel="noopener noreferrer"
+                className="text-sm text-foreground/85 hover:text-foreground transition-colors flex items-start gap-1 group/link leading-snug">
+                <span className="line-clamp-2">{a.title}</span>
+                <ExternalLink className="w-3 h-3 shrink-0 mt-0.5 opacity-0 group/link:opacity-60 transition-opacity" />
+              </a>
+              <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground flex-wrap">
+                <span className="text-blue-400/80 font-medium">{a.source}</span>
+                <span className="opacity-40">·</span>
+                <span>{relativeTime(a.publishedAt)}</span>
+                {a.sentiment && <><span className="opacity-40">·</span><SentimentBadge s={a.sentiment} /></>}
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
 }
 
+// ── StockTwits Panel ───────────────────────────────────────────────────────────
+
+function StockTwitsPanel({ data, ticker }: { data: SocialData["stocktwits"]; ticker: string }) {
+  if (!data || data.twits.length === 0) {
+    return (
+      <div className="py-14 text-center space-y-2">
+        <BarChart2 className="w-8 h-8 text-muted-foreground/40 mx-auto" />
+        <p className="text-sm text-muted-foreground">לא נמצאו twits עבור <span className="font-mono text-foreground">{ticker}</span></p>
+      </div>
+    );
+  }
+  const neutral = data.totalCount - data.bullishCount - data.bearishCount;
+  return (
+    <div className="space-y-4">
+      <SummaryHeader
+        bullish={data.bullishCount} bearish={data.bearishCount}
+        neutral={neutral} total={data.totalCount}
+        label={data.sentimentLabel}
+      />
+      <div className="space-y-2">
+        {data.twits.map((t) => (
+          <div key={t.id} className="flex items-start gap-3 p-3 rounded-lg hover:bg-muted/20 transition-colors">
+            <SentimentIcon s={t.sentiment} />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-foreground/85 leading-snug">{t.body}</p>
+              <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground flex-wrap">
+                <a href={`https://stocktwits.com/${t.username}`} target="_blank" rel="noopener noreferrer"
+                  className="text-green-400/80 font-medium hover:text-green-300 transition-colors">
+                  @{t.username}
+                </a>
+                <span className="opacity-40">·</span>
+                <span>{relativeTime(t.createdAt)}</span>
+                {t.sentiment && <><span className="opacity-40">·</span><SentimentBadge s={t.sentiment} /></>}
+                <a href={t.url} target="_blank" rel="noopener noreferrer" className="ml-auto opacity-0 group-hover:opacity-60 hover:opacity-100">
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="text-[11px] text-muted-foreground/50 text-center">נתוני StockTwits — מתעדכן כל 15 דקות</p>
+    </div>
+  );
+}
+
+// ── Main Component ─────────────────────────────────────────────────────────────
+
+type Platform = "reddit" | "news" | "stocktwits";
+
 export function SocialPulse({ defaultTicker }: { defaultTicker?: string | null }) {
   const [searchInput, setSearchInput] = useState(defaultTicker ?? "");
   const [activeTicker, setActiveTicker] = useState<string | null>(defaultTicker ?? null);
-  const [platform, setPlatform] = useState<"reddit" | "twitter">("reddit");
+  const [platform, setPlatform] = useState<Platform>("news");
 
   const { data, isLoading, isFetching, refetch } = useQuery<SocialData>({
     queryKey: ["social", activeTicker],
@@ -157,7 +276,7 @@ export function SocialPulse({ defaultTicker }: { defaultTicker?: string | null }
       return res.json() as Promise<SocialData>;
     },
     enabled: !!activeTicker,
-    staleTime: 30 * 60 * 1000,
+    staleTime: 15 * 60 * 1000,
     retry: 1,
   });
 
@@ -165,19 +284,16 @@ export function SocialPulse({ defaultTicker }: { defaultTicker?: string | null }
     e.preventDefault();
     const t = searchInput.trim().toUpperCase();
     if (!t) return;
-    if (t === activeTicker) {
-      refetch();
-    } else {
-      setActiveTicker(t);
-    }
+    if (t === activeTicker) { refetch(); } else { setActiveTicker(t); }
   };
 
-  const selectTicker = (t: string) => {
-    setSearchInput(t);
-    setActiveTicker(t);
-  };
-
+  const selectTicker = (t: string) => { setSearchInput(t); setActiveTicker(t); };
   const isActive = (t: string) => activeTicker === t;
+
+  const tabCls = (active: boolean, color: string) =>
+    `flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${
+      active ? `${color} text-foreground` : "border-transparent text-muted-foreground hover:text-foreground"
+    }`;
 
   return (
     <div className="space-y-5">
@@ -198,89 +314,36 @@ export function SocialPulse({ defaultTicker }: { defaultTicker?: string | null }
           חפש
         </Button>
         {activeTicker && (
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            onClick={() => refetch()}
-            disabled={isFetching}
-            title="רענן"
-          >
+          <Button type="button" variant="outline" size="icon" onClick={() => refetch()} disabled={isFetching} title="רענן">
             <RefreshCw className={`w-3.5 h-3.5 ${isFetching ? "animate-spin" : ""}`} />
           </Button>
         )}
       </form>
 
-      {/* Quick tickers */}
+      {/* Quick tickers — shown only before first search */}
       {!activeTicker && (
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs text-muted-foreground">פופולרי:</span>
           {POPULAR_TICKERS.map((t) => (
-            <button
-              key={t}
-              onClick={() => selectTicker(t)}
-              className="font-mono text-xs px-2.5 py-1 rounded-md border border-border/60 bg-muted/20 hover:bg-muted/50 hover:border-border text-foreground/80 hover:text-foreground transition-colors"
-            >
+            <button key={t} onClick={() => selectTicker(t)}
+              className="font-mono text-xs px-2.5 py-1 rounded-md border border-border/60 bg-muted/20 hover:bg-muted/50 hover:border-border text-foreground/80 hover:text-foreground transition-colors">
               {t}
             </button>
           ))}
         </div>
       )}
 
-      {/* Platform sub-tabs */}
+      {/* Ticker header + quick switch */}
       {activeTicker && (
-        <div className="flex items-center gap-0.5 border-b border-border/50">
-          <button
-            onClick={() => setPlatform("reddit")}
-            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${
-              platform === "reddit"
-                ? "border-orange-400 text-orange-300"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <MessageSquare className="w-3.5 h-3.5" />
-            Reddit
-            {data?.reddit && (
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
-                data.reddit.sentimentLabel === "שורי" ? "bg-emerald-500/20 text-emerald-400" :
-                data.reddit.sentimentLabel === "דובי" ? "bg-red-500/20 text-red-400" :
-                "bg-yellow-500/20 text-yellow-400"
-              }`}>
-                {data.reddit.sentimentLabel}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => setPlatform("twitter")}
-            className={`flex items-center gap-1.5 px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${
-              platform === "twitter"
-                ? "border-[#1DA1F2] text-[#1DA1F2]"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            <Twitter className="w-3.5 h-3.5" />
-            Twitter / X
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">בקרוב</span>
-          </button>
-        </div>
-      )}
-
-      {/* Ticker header when active */}
-      {activeTicker && (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="font-mono font-bold text-lg text-primary">{activeTicker}</span>
-          <span className="text-muted-foreground text-sm">— סנטימנט חברתי</span>
-          <div className="flex gap-1 mr-auto">
+          <span className="text-muted-foreground text-sm">— פולס מדיה</span>
+          <div className="flex gap-1 mr-auto flex-wrap">
             {POPULAR_TICKERS.map((t) => (
-              <button
-                key={t}
-                onClick={() => selectTicker(t)}
+              <button key={t} onClick={() => selectTicker(t)}
                 className={`font-mono text-xs px-2 py-0.5 rounded border transition-colors ${
-                  isActive(t)
-                    ? "border-primary text-primary bg-primary/10"
-                    : "border-border/40 text-muted-foreground hover:border-border hover:text-foreground bg-muted/10"
-                }`}
-              >
+                  isActive(t) ? "border-primary text-primary bg-primary/10" : "border-border/40 text-muted-foreground hover:border-border hover:text-foreground bg-muted/10"
+                }`}>
                 {t}
               </button>
             ))}
@@ -288,40 +351,73 @@ export function SocialPulse({ defaultTicker }: { defaultTicker?: string | null }
         </div>
       )}
 
+      {/* Platform tabs */}
+      {activeTicker && (
+        <div className="flex items-center gap-0.5 border-b border-border/50">
+          <button onClick={() => setPlatform("news")} className={tabCls(platform === "news", "border-blue-400")}>
+            <Newspaper className="w-3.5 h-3.5" />
+            ידיעות
+            {data?.news && <SentimentBadge s={
+              data.news.articles.filter(a => a.sentiment === "positive").length >
+              data.news.articles.filter(a => a.sentiment === "negative").length ? "positive" : "negative"
+            } />}
+          </button>
+          <button onClick={() => setPlatform("stocktwits")} className={tabCls(platform === "stocktwits", "border-green-400")}>
+            <BarChart2 className="w-3.5 h-3.5" />
+            StockTwits
+            {data?.stocktwits && (
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                data.stocktwits.sentimentLabel === "שורי" ? "bg-emerald-500/20 text-emerald-400" :
+                data.stocktwits.sentimentLabel === "דובי" ? "bg-red-500/20 text-red-400" :
+                "bg-yellow-500/20 text-yellow-400"
+              }`}>{data.stocktwits.sentimentLabel}</span>
+            )}
+          </button>
+          <button onClick={() => setPlatform("reddit")} className={tabCls(platform === "reddit", "border-orange-400")}>
+            <MessageSquare className="w-3.5 h-3.5" />
+            Reddit
+            {data?.reddit && (
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                data.reddit.sentimentLabel === "שורי" ? "bg-emerald-500/20 text-emerald-400" :
+                data.reddit.sentimentLabel === "דובי" ? "bg-red-500/20 text-red-400" :
+                "bg-yellow-500/20 text-yellow-400"
+              }`}>{data.reddit.sentimentLabel}</span>
+            )}
+          </button>
+        </div>
+      )}
+
       {/* Loading */}
       {isLoading && (
         <div className="space-y-3">
           <Skeleton className="h-20 w-full rounded-xl" />
-          {[...Array(5)].map((_, i) => (
-            <Skeleton key={i} className="h-16 w-full rounded-lg" />
-          ))}
+          {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)}
         </div>
       )}
 
-      {/* Content */}
-      {!isLoading && data && platform === "reddit" && (
-        <RedditPanel data={data.reddit} ticker={data.ticker} />
-      )}
-      {!isLoading && activeTicker && platform === "twitter" && (
-        <TwitterPanel />
-      )}
+      {/* Content panels */}
+      {!isLoading && data && platform === "news" && <NewsPanel data={data.news} ticker={data.ticker} />}
+      {!isLoading && data && platform === "stocktwits" && <StockTwitsPanel data={data.stocktwits} ticker={data.ticker} />}
+      {!isLoading && data && platform === "reddit" && <RedditPanel data={data.reddit} ticker={data.ticker} />}
 
       {/* Empty state */}
       {!activeTicker && (
-        <div className="py-20 text-center space-y-6">
-          <div className="flex justify-center gap-4">
-            <div className="w-14 h-14 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
-              <MessageSquare className="w-6 h-6 text-orange-400" />
+        <div className="py-16 text-center space-y-5">
+          <div className="flex justify-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
+              <Newspaper className="w-5 h-5 text-blue-400" />
             </div>
-            <div className="w-14 h-14 rounded-2xl bg-[#1DA1F2]/10 border border-[#1DA1F2]/20 flex items-center justify-center">
-              <Twitter className="w-6 h-6 text-[#1DA1F2]" />
+            <div className="w-12 h-12 rounded-2xl bg-green-500/10 border border-green-500/20 flex items-center justify-center">
+              <BarChart2 className="w-5 h-5 text-green-400" />
+            </div>
+            <div className="w-12 h-12 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
+              <MessageSquare className="w-5 h-5 text-orange-400" />
             </div>
           </div>
-          <div className="space-y-2">
-            <h3 className="text-base font-semibold text-foreground">מודיעין חברתי — פולס שוק</h3>
+          <div className="space-y-1.5">
+            <h3 className="text-base font-semibold text-foreground">פולס מדיה — חדשות, StockTwits ו-Reddit</h3>
             <p className="text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
-              חפש כל טיקר וקבל ניתוח sentiment בזמן אמת מ-Reddit וב-Twitter (בקרוב).
-              האלגוריתם מנתח עשרות פוסטים ומסווג: שורי / דובי / נייטרלי.
+              חפש טיקר וקבל ידיעות פיננסיות, ציוצים מ-StockTwits וסנטימנט Reddit בזמן אמת.
             </p>
           </div>
         </div>
