@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, TrendingUp, TrendingDown, Clock, Building2, Calendar, FileText, Activity, Star, RefreshCw, AlertTriangle, BarChart2, ArrowUpDown, Layers, Globe, Zap } from "lucide-react";
+import { Search, TrendingUp, TrendingDown, Clock, Building2, Calendar, FileText, Activity, Star, RefreshCw, AlertTriangle, BarChart2, ArrowUpDown, Layers, Globe, Zap, MessageSquare } from "lucide-react";
 import { 
   useGetStockData, 
   useGetStockSummary, 
@@ -21,6 +21,7 @@ import { NotificationCenter } from "@/components/NotificationCenter";
 import { TradingViewChart } from "@/components/TradingViewChart";
 import { MarketReport } from "@/components/MarketReport";
 import { BottleneckExplorer } from "@/components/BottleneckExplorer";
+import { SocialPulse } from "@/components/SocialPulse";
 import { useWatchlist } from "@/hooks/useWatchlist";
 
 const POPULAR_TICKERS = ["AAPL", "TSLA", "NVDA", "MSFT"];
@@ -60,7 +61,7 @@ const formatHebrewNumber = (num: number, options?: Intl.NumberFormatOptions) => 
 export default function Home() {
   const [searchInput, setSearchInput] = useState("");
   const [activeTicker, setActiveTicker] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"search" | "sectors" | "market" | "bottlenecks">("search");
+  const [activeTab, setActiveTab] = useState<"search" | "sectors" | "market" | "bottlenecks" | "social">("search");
   const queryClient = useQueryClient();
 
   const {
@@ -209,7 +210,34 @@ export default function Home() {
             <Zap className="w-3.5 h-3.5" />
             צווארי בקבוק
           </button>
+          <button
+            onClick={() => setActiveTab("social")}
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
+              ${activeTab === "social"
+                ? "border-orange-400 text-orange-300"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"}`}
+          >
+            <MessageSquare className="w-3.5 h-3.5" />
+            סנטימנט חברתי
+          </button>
         </div>
+
+        {/* Social Pulse Tab */}
+        {activeTab === "social" && (
+          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <Card className="bg-card border-border">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium flex items-center gap-2 text-muted-foreground">
+                  <MessageSquare className="w-4 h-4 text-orange-400" />
+                  סנטימנט חברתי — Reddit &amp; Twitter
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <SocialPulse />
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         {/* Bottleneck Tab */}
         {activeTab === "bottlenecks" && (
