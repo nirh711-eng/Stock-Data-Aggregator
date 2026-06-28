@@ -233,7 +233,7 @@ export default function Home() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <SocialPulse />
+                <SocialPulse defaultTicker={activeTicker} />
               </CardContent>
             </Card>
           </div>

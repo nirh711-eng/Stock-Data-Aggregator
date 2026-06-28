@@ -144,9 +144,9 @@ function TwitterPanel() {
   );
 }
 
-export function SocialPulse() {
-  const [searchInput, setSearchInput] = useState("");
-  const [activeTicker, setActiveTicker] = useState<string | null>(null);
+export function SocialPulse({ defaultTicker }: { defaultTicker?: string | null }) {
+  const [searchInput, setSearchInput] = useState(defaultTicker ?? "");
+  const [activeTicker, setActiveTicker] = useState<string | null>(defaultTicker ?? null);
   const [platform, setPlatform] = useState<"reddit" | "twitter">("reddit");
 
   const { data, isLoading, isFetching, refetch } = useQuery<SocialData>({
@@ -186,9 +186,10 @@ export function SocialPulse() {
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
+            dir="ltr"
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value.toUpperCase())}
-            placeholder="הזן טיקר (לדוגמה TSLA)..."
+            placeholder="TSLA, AAPL..."
             className="pl-10 font-mono uppercase bg-card border-border"
           />
         </div>
