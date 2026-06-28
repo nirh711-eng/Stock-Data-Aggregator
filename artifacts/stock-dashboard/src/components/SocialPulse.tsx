@@ -113,10 +113,8 @@ function RedditPanel({ data, ticker }: { data: SocialData["reddit"]; ticker: str
               </a>
               <div className="flex items-center gap-2 mt-1.5 text-xs text-muted-foreground">
                 <span className="text-orange-400/80 font-medium">{post.subreddit}</span>
-                <span className="text-muted-foreground/50">·</span>
-                <span>⬆ {post.score.toLocaleString()}</span>
-                <span className="text-muted-foreground/50">·</span>
-                <span>💬 {post.numComments.toLocaleString()}</span>
+                {post.score > 0 && <><span className="text-muted-foreground/50">·</span><span>⬆ {post.score.toLocaleString()}</span></>}
+                {post.numComments > 0 && <><span className="text-muted-foreground/50">·</span><span>💬 {post.numComments.toLocaleString()}</span></>}
               </div>
             </div>
           </div>

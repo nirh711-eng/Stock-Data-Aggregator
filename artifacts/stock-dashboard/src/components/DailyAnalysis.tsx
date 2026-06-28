@@ -360,8 +360,8 @@ export function DailyAnalysis({ ticker }: DailyAnalysisProps) {
                       </a>
                       <div className="flex items-center gap-1.5 mt-0.5 text-muted-foreground/60">
                         <span className="text-orange-400/70">{post.subreddit}</span>
-                        <span>⬆{post.score}</span>
-                        <span>💬{post.numComments}</span>
+                        {post.score > 0 && <span>⬆{post.score}</span>}
+                        {post.numComments > 0 && <span>💬{post.numComments}</span>}
                       </div>
                     </div>
                   </div>

@@ -418,22 +418,69 @@ function detectSentiment(text: string): "bullish" | "bearish" | "neutral" {
   return b > s ? "bullish" : s > b ? "bearish" : "neutral";
 }
 
-function fetchRedditJson<T>(url: string): Promise<T | null> {
-  return Promise.race<T | null>([
-    new Promise<T | null>((resolve) => {
+// Reddit public JSON API returns 403 since 2023 — use RSS (Atom) feeds instead
+function fetchRedditRss(url: string): Promise<string | null> {
+  return Promise.race<string | null>([
+    new Promise<string | null>((resolve) => {
       https.get(url, {
         headers: {
-          "User-Agent": "StockPulse/1.0 (stock analysis educational tool; contact: noreply@example.com)",
-          "Accept": "application/json",
+          "User-Agent": "StockPulse/1.0 (stock analysis educational tool)",
+          "Accept": "application/atom+xml, application/xml, text/xml",
         },
       }, (res) => {
+        // Follow a single redirect if needed
+        if ((res.statusCode === 301 || res.statusCode === 302) && res.headers.location) {
+          https.get(res.headers.location, {
+            headers: { "User-Agent": "StockPulse/1.0", "Accept": "application/atom+xml, application/xml, text/xml" },
+          }, (res2) => {
+            let raw = "";
+            res2.on("data", (c: string) => (raw += c));
+            res2.on("end", () => resolve(raw || null));
+          }).on("error", () => resolve(null));
+          return;
+        }
+        if (res.statusCode && res.statusCode >= 400) { resolve(null); return; }
         let raw = "";
         res.on("data", (c: string) => (raw += c));
-        res.on("end", () => { try { resolve(JSON.parse(raw) as T); } catch { resolve(null); } });
+        res.on("end", () => resolve(raw || null));
       }).on("error", () => resolve(null));
     }),
-    new Promise<null>((r) => setTimeout(() => r(null), 8000)),
+    new Promise<null>((r) => setTimeout(() => r(null), 9000)),
   ]);
+}
+
+function decodeXmlEntities(s: string): string {
+  return s
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'");
+}
+
+function parseRedditRss(xml: string, defaultSubreddit: string): RedditPost[] {
+  const posts: RedditPost[] = [];
+  const entryRx = /<entry>([\s\S]*?)<\/entry>/g;
+  let m: RegExpExecArray | null;
+  while ((m = entryRx.exec(xml)) !== null) {
+    const entry = m[1];
+    const title = decodeXmlEntities((entry.match(/<title[^>]*>([\s\S]*?)<\/title>/) ?? [])[1]?.trim() ?? "");
+    const permalink = (entry.match(/<link[^>]+href="([^"]+)"/) ?? [])[1]?.trim() ?? "";
+    const subMatch = entry.match(/<category[^>]+label="([^"]+)"/);
+    const subreddit = subMatch ? subMatch[1] : defaultSubreddit;
+    // Filter out subreddit homepage links (no /comments/ in path)
+    if (!title || !permalink || !permalink.includes("/comments/")) continue;
+    posts.push({
+      title,
+      subreddit,
+      score: 0,
+      numComments: 0,
+      sentiment: detectSentiment(title),
+      permalink,
+    });
+  }
+  return posts;
 }
 
 export async function fetchReddit(ticker: string): Promise<RedditData | null> {
@@ -442,41 +489,29 @@ export async function fetchReddit(ticker: string): Promise<RedditData | null> {
   if (cached) return cached;
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const [general, wsb] = await Promise.all([
-      fetchRedditJson<any>(`https://www.reddit.com/search.json?q=${encodeURIComponent(ticker + " stock")}&sort=hot&t=week&limit=20&type=link`),
-      fetchRedditJson<any>(`https://www.reddit.com/r/wallstreetbets/search.json?q=${encodeURIComponent(ticker)}&sort=hot&t=week&limit=10&restrict_sr=1`),
-    ]);
+    const qStock = encodeURIComponent(`${ticker} stock`);
+    // Single request to avoid Reddit rate limits — general search covers WSB + r/stocks + r/investing
+    const generalXml = await fetchRedditRss(
+      `https://www.reddit.com/search.rss?q=${qStock}&sort=hot&t=week&limit=25`
+    );
 
-    const posts: RedditPost[] = [];
     const seen = new Set<string>();
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    function extract(data: any) {
-      for (const item of data?.data?.children ?? []) {
-        const p = item?.data;
-        if (!p?.title) continue;
+    const allPosts: RedditPost[] = [];
+    function addPosts(xml: string | null, sub: string) {
+      if (!xml) return;
+      for (const p of parseRedditRss(xml, sub)) {
         const key = p.title.slice(0, 50).toLowerCase();
         if (seen.has(key)) continue;
         seen.add(key);
-        posts.push({
-          title: p.title,
-          subreddit: p.subreddit_name_prefixed ?? `r/${p.subreddit ?? "reddit"}`,
-          score: p.score ?? 0,
-          numComments: p.num_comments ?? 0,
-          sentiment: detectSentiment(p.title + " " + (p.selftext ?? "")),
-          permalink: `https://reddit.com${p.permalink ?? ""}`,
-        });
+        allPosts.push(p);
       }
     }
 
-    extract(general);
-    extract(wsb);
+    addPosts(generalXml, "r/reddit");
 
-    if (posts.length === 0) return null;
+    if (allPosts.length === 0) return null;
 
-    posts.sort((a, b) => b.score - a.score);
-    const top = posts.slice(0, 10);
+    const top = allPosts.slice(0, 15);
 
     const bullishCount = top.filter(p => p.sentiment === "bullish").length;
     const bearishCount = top.filter(p => p.sentiment === "bearish").length;
@@ -485,12 +520,12 @@ export async function fetchReddit(ticker: string): Promise<RedditData | null> {
     const sentimentLabel = ratio > 0.6 ? "שורי" : ratio < 0.4 ? "דובי" : "מעורב";
 
     const topText = top.slice(0, 5).map(p =>
-      `  - [${p.sentiment === "bullish" ? "🟢" : p.sentiment === "bearish" ? "🔴" : "⚪"}] ${p.title} (${p.subreddit} | ⬆${p.score} | 💬${p.numComments})`
+      `  - [${p.sentiment === "bullish" ? "🟢" : p.sentiment === "bearish" ? "🔴" : "⚪"}] ${p.title} (${p.subreddit})`
     ).join("\n");
 
-    const contextText = `Reddit סנטימנט: ${sentimentLabel} | 🟢 שורי: ${bullishCount} | 🔴 דובי: ${bearishCount} | ⚪ נייטרלי: ${neutralCount} | סה"כ ${posts.length} פוסטים\n${topText}`;
+    const contextText = `Reddit סנטימנט: ${sentimentLabel} | 🟢 שורי: ${bullishCount} | 🔴 דובי: ${bearishCount} | ⚪ נייטרלי: ${neutralCount} | סה"כ ${allPosts.length} פוסטים\n${topText}`;
 
-    const result: RedditData = { posts: top, bullishCount, bearishCount, neutralCount, totalMentions: posts.length, sentimentLabel, contextText };
+    const result: RedditData = { posts: top, bullishCount, bearishCount, neutralCount, totalMentions: allPosts.length, sentimentLabel, contextText };
     setCache(cacheKey, result, 30 * 60 * 1000);
     return result;
   } catch {

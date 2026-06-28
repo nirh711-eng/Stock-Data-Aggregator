@@ -718,8 +718,8 @@ export function DeepAnalysis({ ticker }: DeepAnalysisProps) {
                       </a>
                       <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
                         <span className="text-orange-400/80">{post.subreddit}</span>
-                        <span>⬆ {post.score.toLocaleString()}</span>
-                        <span>💬 {post.numComments}</span>
+                        {post.score > 0 && <><span className="text-muted-foreground/50">·</span><span>⬆ {post.score.toLocaleString()}</span></>}
+                        {post.numComments > 0 && <><span className="text-muted-foreground/50">·</span><span>💬 {post.numComments}</span></>}
                       </div>
                     </div>
                   </div>
