@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   Search, MessageSquare, ExternalLink,
   TrendingUp, TrendingDown, Minus, RefreshCw,
-  Newspaper, BarChart2,
+  Newspaper, BarChart2, Twitter,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,18 @@ interface StockTwit {
   url: string;
 }
 
+interface Tweet {
+  id: string;
+  text: string;
+  username: string;
+  displayName: string;
+  createdAt: string;
+  url: string;
+  likeCount: number;
+  retweetCount: number;
+  sentiment: "bullish" | "bearish" | "neutral";
+}
+
 interface SocialData {
   ticker: string;
   reddit: {
@@ -54,6 +66,14 @@ interface SocialData {
     twits: StockTwit[];
     bullishCount: number;
     bearishCount: number;
+    totalCount: number;
+    sentimentLabel: string;
+  } | null;
+  twitter: {
+    tweets: Tweet[];
+    bullishCount: number;
+    bearishCount: number;
+    neutralCount: number;
     totalCount: number;
     sentimentLabel: string;
   } | null;
@@ -213,6 +233,53 @@ function NewsPanel({ data, ticker }: { data: SocialData["news"]; ticker: string 
   );
 }
 
+// ── Twitter/X Panel ───────────────────────────────────────────────────────────
+
+function TwitterPanel({ data, ticker }: { data: SocialData["twitter"]; ticker: string }) {
+  if (!data || data.tweets.length === 0) {
+    return (
+      <div className="py-14 text-center space-y-2">
+        <Twitter className="w-8 h-8 text-muted-foreground/40 mx-auto" />
+        <p className="text-sm text-muted-foreground">לא נמצאו tweets עבור <span className="font-mono text-foreground">{ticker}</span></p>
+      </div>
+    );
+  }
+  return (
+    <div className="space-y-4">
+      <SummaryHeader
+        bullish={data.bullishCount} bearish={data.bearishCount}
+        neutral={data.neutralCount} total={data.totalCount}
+        label={data.sentimentLabel}
+      />
+      <div className="space-y-2">
+        {data.tweets.map((t) => (
+          <div key={t.id} className="flex items-start gap-3 p-3 rounded-lg hover:bg-muted/20 transition-colors group">
+            <SentimentIcon s={t.sentiment} />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-foreground/85 leading-snug whitespace-pre-wrap break-words">{t.text}</p>
+              <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground flex-wrap">
+                <a href={`https://x.com/${t.username}`} target="_blank" rel="noopener noreferrer"
+                  className="text-[#1DA1F2]/80 font-medium hover:text-[#1DA1F2] transition-colors">
+                  @{t.username}
+                </a>
+                <span className="opacity-40">·</span>
+                <span>{relativeTime(t.createdAt)}</span>
+                {t.likeCount > 0 && <><span className="opacity-40">·</span><span>♥ {t.likeCount.toLocaleString()}</span></>}
+                {t.retweetCount > 0 && <><span className="opacity-40">·</span><span>↩ {t.retweetCount.toLocaleString()}</span></>}
+                <a href={t.url} target="_blank" rel="noopener noreferrer"
+                  className="mr-auto opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity">
+                  <ExternalLink className="w-3 h-3" />
+                </a>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="text-[11px] text-muted-foreground/50 text-center">נתוני X/Twitter דרך Apify — מתעדכן כל 30 דקות</p>
+    </div>
+  );
+}
+
 // ── StockTwits Panel ───────────────────────────────────────────────────────────
 
 function StockTwitsPanel({ data, ticker }: { data: SocialData["stocktwits"]; ticker: string }) {
@@ -261,7 +328,7 @@ function StockTwitsPanel({ data, ticker }: { data: SocialData["stocktwits"]; tic
 
 // ── Main Component ─────────────────────────────────────────────────────────────
 
-type Platform = "reddit" | "news" | "stocktwits";
+type Platform = "reddit" | "news" | "stocktwits" | "twitter";
 
 export function SocialPulse({ defaultTicker }: { defaultTicker?: string | null }) {
   const [searchInput, setSearchInput] = useState(defaultTicker ?? "");
@@ -353,7 +420,7 @@ export function SocialPulse({ defaultTicker }: { defaultTicker?: string | null }
 
       {/* Platform tabs */}
       {activeTicker && (
-        <div className="flex items-center gap-0.5 border-b border-border/50">
+        <div className="flex items-center gap-0.5 border-b border-border/50 overflow-x-auto">
           <button onClick={() => setPlatform("news")} className={tabCls(platform === "news", "border-blue-400")}>
             <Newspaper className="w-3.5 h-3.5" />
             ידיעות
@@ -361,6 +428,17 @@ export function SocialPulse({ defaultTicker }: { defaultTicker?: string | null }
               data.news.articles.filter(a => a.sentiment === "positive").length >
               data.news.articles.filter(a => a.sentiment === "negative").length ? "positive" : "negative"
             } />}
+          </button>
+          <button onClick={() => setPlatform("twitter")} className={tabCls(platform === "twitter", "border-[#1DA1F2]")}>
+            <Twitter className="w-3.5 h-3.5" />
+            X / Twitter
+            {data?.twitter && (
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                data.twitter.sentimentLabel === "שורי" ? "bg-emerald-500/20 text-emerald-400" :
+                data.twitter.sentimentLabel === "דובי" ? "bg-red-500/20 text-red-400" :
+                "bg-yellow-500/20 text-yellow-400"
+              }`}>{data.twitter.sentimentLabel}</span>
+            )}
           </button>
           <button onClick={() => setPlatform("stocktwits")} className={tabCls(platform === "stocktwits", "border-green-400")}>
             <BarChart2 className="w-3.5 h-3.5" />
@@ -397,6 +475,7 @@ export function SocialPulse({ defaultTicker }: { defaultTicker?: string | null }
 
       {/* Content panels */}
       {!isLoading && data && platform === "news" && <NewsPanel data={data.news} ticker={data.ticker} />}
+      {!isLoading && data && platform === "twitter" && <TwitterPanel data={data.twitter} ticker={data.ticker} />}
       {!isLoading && data && platform === "stocktwits" && <StockTwitsPanel data={data.stocktwits} ticker={data.ticker} />}
       {!isLoading && data && platform === "reddit" && <RedditPanel data={data.reddit} ticker={data.ticker} />}
 
@@ -407,6 +486,9 @@ export function SocialPulse({ defaultTicker }: { defaultTicker?: string | null }
             <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center">
               <Newspaper className="w-5 h-5 text-blue-400" />
             </div>
+            <div className="w-12 h-12 rounded-2xl bg-[#1DA1F2]/10 border border-[#1DA1F2]/20 flex items-center justify-center">
+              <Twitter className="w-5 h-5 text-[#1DA1F2]" />
+            </div>
             <div className="w-12 h-12 rounded-2xl bg-green-500/10 border border-green-500/20 flex items-center justify-center">
               <BarChart2 className="w-5 h-5 text-green-400" />
             </div>
@@ -415,9 +497,9 @@ export function SocialPulse({ defaultTicker }: { defaultTicker?: string | null }
             </div>
           </div>
           <div className="space-y-1.5">
-            <h3 className="text-base font-semibold text-foreground">פולס מדיה — חדשות, StockTwits ו-Reddit</h3>
+            <h3 className="text-base font-semibold text-foreground">פולס מדיה — ידיעות, X/Twitter, StockTwits ו-Reddit</h3>
             <p className="text-sm text-muted-foreground max-w-md mx-auto leading-relaxed">
-              חפש טיקר וקבל ידיעות פיננסיות, ציוצים מ-StockTwits וסנטימנט Reddit בזמן אמת.
+              חפש טיקר וקבל ידיעות פיננסיות, tweets מ-X, ציוצים מ-StockTwits וסנטימנט Reddit בזמן אמת.
             </p>
           </div>
         </div>

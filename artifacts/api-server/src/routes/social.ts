@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { fetchReddit, fetchNewsArticles, fetchStockTwits } from "../lib/enrichment";
+import { fetchReddit, fetchNewsArticles, fetchStockTwits, fetchTwitter } from "../lib/enrichment";
 
 const router = Router();
 
@@ -13,16 +13,18 @@ router.get("/social/:ticker", async (req, res) => {
   }
 
   try {
-    const [redditData, newsData, stocktwitsData] = await Promise.all([
+    const [redditData, newsData, stocktwitsData, twitterData] = await Promise.all([
       fetchReddit(ticker),
       fetchNewsArticles(ticker),
       fetchStockTwits(ticker),
+      fetchTwitter(ticker),
     ]);
     res.json({
       ticker,
       reddit: redditData ?? null,
       news: newsData ?? null,
       stocktwits: stocktwitsData ?? null,
+      twitter: twitterData ?? null,
       generatedAt: new Date().toISOString(),
     });
   } catch (err) {

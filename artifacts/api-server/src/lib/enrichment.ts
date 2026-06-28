@@ -1,5 +1,35 @@
 import https from "https";
 
+// ── Generic POST with timeout ─────────────────────────────────────────────────
+
+function postJson<T = unknown>(url: string, body: unknown, timeoutMs = 28000): Promise<T | null> {
+  return Promise.race<T | null>([
+    new Promise<T | null>((resolve) => {
+      const bodyStr = JSON.stringify(body);
+      const urlObj = new URL(url);
+      const req = https.request({
+        hostname: urlObj.hostname,
+        path: urlObj.pathname + urlObj.search,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(bodyStr),
+          "User-Agent": "StockPulse/1.0",
+          "Accept": "application/json",
+        },
+      }, (res) => {
+        let raw = "";
+        res.on("data", (c: string) => (raw += c));
+        res.on("end", () => { try { resolve(JSON.parse(raw) as T); } catch { resolve(null); } });
+      });
+      req.on("error", () => resolve(null));
+      req.write(bodyStr);
+      req.end();
+    }),
+    new Promise<null>((r) => setTimeout(() => r(null), timeoutMs)),
+  ]);
+}
+
 // ── Generic fetch with timeout ────────────────────────────────────────────────
 
 function fetchJson<T = unknown>(url: string, timeoutMs = 5000): Promise<T | null> {
@@ -52,6 +82,7 @@ const TWELVE_KEY    = process.env.TWELVE_DATA_API_KEY     ?? "";
 const AV_KEY        = process.env.ALPHA_VANTAGE_API_KEY   ?? "";
 const MARKETAUX_KEY = process.env.MARKETAUX_API_KEY       ?? "";
 const POLYGON_KEY   = process.env.POLYGON_API_KEY         ?? "";
+const APIFY_TOKEN   = process.env.APIFY_API_TOKEN         ?? "";
 
 // ── Finnhub: news + insider transactions + peers ──────────────────────────────
 
@@ -700,6 +731,105 @@ export async function fetchStockTwits(ticker: string): Promise<StockTwitsData | 
 
     const result: StockTwitsData = { twits, bullishCount, bearishCount, totalCount: twits.length, sentimentLabel };
     setCache(cacheKey, result, 15 * 60 * 1000);
+    return result;
+  } catch {
+    return null;
+  }
+}
+
+// ── Twitter/X via Apify ───────────────────────────────────────────────────────
+
+export interface Tweet {
+  id: string;
+  text: string;
+  username: string;
+  displayName: string;
+  createdAt: string;
+  url: string;
+  likeCount: number;
+  retweetCount: number;
+  sentiment: "bullish" | "bearish" | "neutral";
+}
+
+export interface TwitterData {
+  tweets: Tweet[];
+  bullishCount: number;
+  bearishCount: number;
+  neutralCount: number;
+  totalCount: number;
+  sentimentLabel: string;
+}
+
+// Raw item shape varies across Apify actors — handle multiple field names
+type ApifyTweetRaw = {
+  text?: string; full_text?: string;
+  author?: { userName?: string; name?: string; followers?: number };
+  user?: { screen_name?: string; name?: string };
+  createdAt?: string; created_at?: string;
+  url?: string; tweet_url?: string;
+  id?: string; id_str?: string;
+  likeCount?: number; favorite_count?: number;
+  retweetCount?: number; retweet_count?: number;
+};
+
+export async function fetchTwitter(ticker: string): Promise<TwitterData | null> {
+  if (!APIFY_TOKEN) return null;
+
+  const slot = Math.floor(Date.now() / (30 * 60 * 1000));
+  const cacheKey = `twitter_${ticker}_${slot}`;
+  const cached = getCache<TwitterData>(cacheKey);
+  if (cached) return cached;
+
+  try {
+    // quacker~twitter-scraper: search-first actor, well maintained
+    const url = `https://api.apify.com/v2/acts/quacker~twitter-scraper/run-sync-get-dataset-items?token=${APIFY_TOKEN}&memory=128&timeout=25`;
+    const items = await postJson<ApifyTweetRaw[]>(url, {
+      searchTerms: [`$${ticker}`, `${ticker} stock`],
+      maxItems: 25,
+      sort: "Latest",
+    }, 27000);
+
+    if (!Array.isArray(items) || items.length === 0) return null;
+
+    const seen = new Set<string>();
+    const tweets: Tweet[] = [];
+
+    for (const item of items) {
+      const text = item.text ?? item.full_text ?? "";
+      if (!text) continue;
+      const key = text.slice(0, 40).toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const username = item.author?.userName ?? item.user?.screen_name ?? "unknown";
+      const displayName = item.author?.name ?? item.user?.name ?? username;
+      const createdAt = item.createdAt ?? item.created_at ?? new Date().toISOString();
+      const id = item.id ?? item.id_str ?? Math.random().toString(36).slice(2);
+      const tweetUrl = item.url ?? item.tweet_url ?? `https://x.com/${username}/status/${id}`;
+
+      tweets.push({
+        id,
+        text,
+        username,
+        displayName,
+        createdAt,
+        url: tweetUrl,
+        likeCount: item.likeCount ?? item.favorite_count ?? 0,
+        retweetCount: item.retweetCount ?? item.retweet_count ?? 0,
+        sentiment: detectSentiment(text),
+      });
+    }
+
+    if (tweets.length === 0) return null;
+
+    const bullishCount = tweets.filter(t => t.sentiment === "bullish").length;
+    const bearishCount = tweets.filter(t => t.sentiment === "bearish").length;
+    const neutralCount = tweets.filter(t => t.sentiment === "neutral").length;
+    const ratio = bullishCount / (bullishCount + bearishCount || 1);
+    const sentimentLabel = ratio > 0.6 ? "שורי" : ratio < 0.4 ? "דובי" : "מעורב";
+
+    const result: TwitterData = { tweets, bullishCount, bearishCount, neutralCount, totalCount: tweets.length, sentimentLabel };
+    setCache(cacheKey, result, 30 * 60 * 1000);
     return result;
   } catch {
     return null;
