@@ -387,6 +387,117 @@ export interface MarketauxData {
 type MxArticle  = { title: string; source: string; entities?: Array<{ symbol: string; sentiment_score: number }> };
 type MxResponse = { data?: MxArticle[] };
 
+// ── Reddit: social sentiment scraper (free public JSON API) ──────────────────
+
+export interface RedditPost {
+  title: string;
+  subreddit: string;
+  score: number;
+  numComments: number;
+  sentiment: "bullish" | "bearish" | "neutral";
+  permalink: string;
+}
+
+export interface RedditData {
+  posts: RedditPost[];
+  bullishCount: number;
+  bearishCount: number;
+  neutralCount: number;
+  totalMentions: number;
+  sentimentLabel: string;
+  contextText: string;
+}
+
+const BULLISH_KW = ["buy","long","calls","bullish","moon","bull","undervalued","breakout","rally","surge","upside","strong buy","outperform","beat","growth","accumulate"];
+const BEARISH_KW = ["sell","short","puts","bearish","crash","overvalued","dump","fraud","miss","decline","downside","avoid","underperform","bubble","collapse","bankruptcy"];
+
+function detectSentiment(text: string): "bullish" | "bearish" | "neutral" {
+  const lower = text.toLowerCase();
+  const b = BULLISH_KW.filter(k => lower.includes(k)).length;
+  const s = BEARISH_KW.filter(k => lower.includes(k)).length;
+  return b > s ? "bullish" : s > b ? "bearish" : "neutral";
+}
+
+function fetchRedditJson<T>(url: string): Promise<T | null> {
+  return Promise.race<T | null>([
+    new Promise<T | null>((resolve) => {
+      https.get(url, {
+        headers: {
+          "User-Agent": "StockPulse/1.0 (stock analysis educational tool; contact: noreply@example.com)",
+          "Accept": "application/json",
+        },
+      }, (res) => {
+        let raw = "";
+        res.on("data", (c: string) => (raw += c));
+        res.on("end", () => { try { resolve(JSON.parse(raw) as T); } catch { resolve(null); } });
+      }).on("error", () => resolve(null));
+    }),
+    new Promise<null>((r) => setTimeout(() => r(null), 8000)),
+  ]);
+}
+
+export async function fetchReddit(ticker: string): Promise<RedditData | null> {
+  const cacheKey = `reddit_${ticker}_${today()}`;
+  const cached = getCache<RedditData>(cacheKey);
+  if (cached) return cached;
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const [general, wsb] = await Promise.all([
+      fetchRedditJson<any>(`https://www.reddit.com/search.json?q=${encodeURIComponent(ticker + " stock")}&sort=hot&t=week&limit=20&type=link`),
+      fetchRedditJson<any>(`https://www.reddit.com/r/wallstreetbets/search.json?q=${encodeURIComponent(ticker)}&sort=hot&t=week&limit=10&restrict_sr=1`),
+    ]);
+
+    const posts: RedditPost[] = [];
+    const seen = new Set<string>();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    function extract(data: any) {
+      for (const item of data?.data?.children ?? []) {
+        const p = item?.data;
+        if (!p?.title) continue;
+        const key = p.title.slice(0, 50).toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        posts.push({
+          title: p.title,
+          subreddit: p.subreddit_name_prefixed ?? `r/${p.subreddit ?? "reddit"}`,
+          score: p.score ?? 0,
+          numComments: p.num_comments ?? 0,
+          sentiment: detectSentiment(p.title + " " + (p.selftext ?? "")),
+          permalink: `https://reddit.com${p.permalink ?? ""}`,
+        });
+      }
+    }
+
+    extract(general);
+    extract(wsb);
+
+    if (posts.length === 0) return null;
+
+    posts.sort((a, b) => b.score - a.score);
+    const top = posts.slice(0, 10);
+
+    const bullishCount = top.filter(p => p.sentiment === "bullish").length;
+    const bearishCount = top.filter(p => p.sentiment === "bearish").length;
+    const neutralCount = top.filter(p => p.sentiment === "neutral").length;
+    const ratio = bullishCount / (bullishCount + bearishCount || 1);
+    const sentimentLabel = ratio > 0.6 ? "שורי" : ratio < 0.4 ? "דובי" : "מעורב";
+
+    const topText = top.slice(0, 5).map(p =>
+      `  - [${p.sentiment === "bullish" ? "🟢" : p.sentiment === "bearish" ? "🔴" : "⚪"}] ${p.title} (${p.subreddit} | ⬆${p.score} | 💬${p.numComments})`
+    ).join("\n");
+
+    const contextText = `Reddit סנטימנט: ${sentimentLabel} | 🟢 שורי: ${bullishCount} | 🔴 דובי: ${bearishCount} | ⚪ נייטרלי: ${neutralCount} | סה"כ ${posts.length} פוסטים\n${topText}`;
+
+    const result: RedditData = { posts: top, bullishCount, bearishCount, neutralCount, totalMentions: posts.length, sentimentLabel, contextText };
+    setCache(cacheKey, result, 30 * 60 * 1000);
+    return result;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchMarketaux(ticker: string): Promise<MarketauxData | null> {
   if (!MARKETAUX_KEY) return null;
   try {

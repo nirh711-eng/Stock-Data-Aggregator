@@ -23,7 +23,9 @@ import {
   Calendar,
   Activity,
   Skull,
-  Clock
+  Clock,
+  MessageSquare,
+  ExternalLink
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -650,6 +652,78 @@ export function DeepAnalysis({ ticker }: DeepAnalysisProps) {
                 <div className="text-sm leading-relaxed text-orange-200/90 bg-orange-500/5 border border-orange-500/20 rounded-lg p-4">
                   {data.riskMatrix.thesisBreaker}
                 </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ── Reddit Social Pulse ── */}
+        {data.redditData && data.redditData.posts && data.redditData.posts.length > 0 && (
+          <Card className="border-t-[3px] border-t-orange-400 bg-card/50 shadow-md">
+            <CardHeader className="pb-3 border-b border-border/50 bg-muted/20">
+              <CardTitle className="text-base flex items-center gap-2 text-orange-300">
+                <MessageSquare className="w-4 h-4" />
+                <span>פולס Reddit — סנטימנט חברתי</span>
+                <Badge variant="outline" className={`ml-auto text-xs font-bold border ${
+                  data.redditData.sentimentLabel === "שורי"
+                    ? "border-emerald-500/50 text-emerald-400 bg-emerald-500/10"
+                    : data.redditData.sentimentLabel === "דובי"
+                    ? "border-red-500/50 text-red-400 bg-red-500/10"
+                    : "border-yellow-500/50 text-yellow-400 bg-yellow-500/10"
+                }`}>
+                  {data.redditData.sentimentLabel}
+                </Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4">
+              <div className="flex items-center gap-4 mb-4 p-3 bg-muted/20 rounded-lg border border-border/30">
+                <div className="flex items-center gap-1.5 text-sm">
+                  <span className="text-lg">🟢</span>
+                  <span className="text-emerald-400 font-bold">{data.redditData.bullishCount}</span>
+                  <span className="text-muted-foreground text-xs">שורי</span>
+                </div>
+                <div className="h-4 w-px bg-border/50" />
+                <div className="flex items-center gap-1.5 text-sm">
+                  <span className="text-lg">🔴</span>
+                  <span className="text-red-400 font-bold">{data.redditData.bearishCount}</span>
+                  <span className="text-muted-foreground text-xs">דובי</span>
+                </div>
+                <div className="h-4 w-px bg-border/50" />
+                <div className="flex items-center gap-1.5 text-sm">
+                  <span className="text-lg">⚪</span>
+                  <span className="text-muted-foreground font-bold">{data.redditData.neutralCount}</span>
+                  <span className="text-muted-foreground text-xs">נייטרלי</span>
+                </div>
+                <div className="h-4 w-px bg-border/50" />
+                <span className="text-xs text-muted-foreground mr-auto">{data.redditData.totalMentions} פוסטים נותחו</span>
+              </div>
+              <div className="space-y-2">
+                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                {(data.redditData.posts as any[]).slice(0, 6).map((post: any, i: number) => (
+                  <div key={i} className={`flex items-start gap-2.5 p-2.5 rounded-md border text-sm ${
+                    post.sentiment === "bullish"
+                      ? "border-emerald-500/20 bg-emerald-500/5"
+                      : post.sentiment === "bearish"
+                      ? "border-red-500/20 bg-red-500/5"
+                      : "border-border/20 bg-muted/10"
+                  }`}>
+                    <span className="shrink-0 mt-0.5">
+                      {post.sentiment === "bullish" ? "🟢" : post.sentiment === "bearish" ? "🔴" : "⚪"}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <a href={post.permalink} target="_blank" rel="noopener noreferrer"
+                        className="text-foreground/90 hover:text-foreground transition-colors flex items-start gap-1 group leading-snug">
+                        <span className="line-clamp-2">{post.title}</span>
+                        <ExternalLink className="w-3 h-3 shrink-0 mt-0.5 opacity-0 group-hover:opacity-70 transition-opacity" />
+                      </a>
+                      <div className="flex items-center gap-2 mt-1 text-xs text-muted-foreground">
+                        <span className="text-orange-400/80">{post.subreddit}</span>
+                        <span>⬆ {post.score.toLocaleString()}</span>
+                        <span>💬 {post.numComments}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
             </CardContent>
           </Card>

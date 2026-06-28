@@ -3,7 +3,7 @@ import yahooFinanceMod from "yahoo-finance2";
 import { openai } from "@workspace/integrations-openai-ai-server";
 import { GetStockDailyAnalysisParams } from "@workspace/api-zod";
 import { jsonrepair } from "jsonrepair";
-import { fetchFinnhub, fetchTechnicals, fetchNewsSentiment, fetchMarketaux } from "../lib/enrichment";
+import { fetchFinnhub, fetchTechnicals, fetchNewsSentiment, fetchMarketaux, fetchReddit } from "../lib/enrichment";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const YahooFinance = yahooFinanceMod as any;
@@ -32,7 +32,7 @@ router.get("/stocks/:ticker/daily-analysis", async (req, res) => {
   const upperTicker = ticker.toUpperCase();
 
   try {
-    const [quoteResult, qsResult, insightsResult, searchResult, finnhubData, techData, sentimentData, marketauxData] = await Promise.all([
+    const [quoteResult, qsResult, insightsResult, searchResult, finnhubData, techData, sentimentData, marketauxData, redditData] = await Promise.all([
       yahooFinance.quote(upperTicker).catch(() => null),
       yahooFinance.quoteSummary(upperTicker, {
         modules: ["financialData", "defaultKeyStatistics", "recommendationTrend", "assetProfile", "calendarEvents", "earningsHistory"],
@@ -44,6 +44,7 @@ router.get("/stocks/:ticker/daily-analysis", async (req, res) => {
       fetchTechnicals(upperTicker),
       fetchNewsSentiment(upperTicker),
       fetchMarketaux(upperTicker),
+      fetchReddit(upperTicker),
     ]);
 
     if (!quoteResult) {
@@ -228,6 +229,9 @@ ${finnhubData?.insiderText ?? "  לא זמין"}
 --- סנטימנט חדשות ---
 ${sentimentData ? `ציון כולל: ${sentimentData.overallLabel} (${sentimentData.overallScore?.toFixed(3) ?? "N/A"})\n${sentimentData.articlesText}` : marketauxData?.text ?? "  ראה חדשות למעלה"}
 
+--- סנטימנט חברתי — Reddit ---
+${redditData?.contextText ?? "  לא זמין"}
+
 --- התפתחויות משמעותיות ---
 ${sigDevs.length > 0 ? sigDevs.map((s: { headline: string; date: string | null }) => `- ${s.headline}`).join("\n") : "אין"}
 
@@ -290,6 +294,7 @@ ${dataContext}
       sigDevs,
       analystSummary,
       aiAnalysis,
+      redditData: redditData ?? null,
       generatedAt: new Date().toISOString(),
     });
   } catch (err) {

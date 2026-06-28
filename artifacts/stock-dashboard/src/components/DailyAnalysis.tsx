@@ -12,6 +12,7 @@ import {
   Lightbulb,
   Activity,
   ExternalLink,
+  MessageSquare,
 } from "lucide-react";
 import {
   useGetStockDailyAnalysis,
@@ -315,6 +316,61 @@ export function DailyAnalysis({ ticker }: DailyAnalysisProps) {
           </CardContent>
         </Card>
       )}
+
+      {/* Reddit Social Pulse */}
+      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+      {(data as any).redditData && (data as any).redditData.posts?.length > 0 && (() => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const rd = (data as any).redditData;
+        return (
+          <Card className="bg-card/50 border-orange-400/30 border-t-2 border-t-orange-400">
+            <CardHeader className="pb-2 pt-3 px-4">
+              <CardTitle className="text-xs font-semibold text-orange-300 flex items-center gap-1.5 uppercase tracking-wide">
+                <MessageSquare className="w-3.5 h-3.5" /> פולס Reddit
+                <Badge variant="outline" className={`mr-auto text-[10px] py-0 px-1.5 font-bold border ${
+                  rd.sentimentLabel === "שורי"
+                    ? "border-emerald-500/50 text-emerald-400 bg-emerald-500/10"
+                    : rd.sentimentLabel === "דובי"
+                    ? "border-red-500/50 text-red-400 bg-red-500/10"
+                    : "border-yellow-500/50 text-yellow-400 bg-yellow-500/10"
+                }`}>
+                  {rd.sentimentLabel}
+                </Badge>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0 px-4 pb-3">
+              <div className="flex items-center gap-3 text-xs mb-2 text-muted-foreground">
+                <span className="text-emerald-400 font-semibold">🟢 {rd.bullishCount} שורי</span>
+                <span className="text-red-400 font-semibold">🔴 {rd.bearishCount} דובי</span>
+                <span>⚪ {rd.neutralCount} נייטרלי</span>
+                <span className="mr-auto opacity-60">{rd.totalMentions} פוסטים</span>
+              </div>
+              <div className="space-y-1.5">
+                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                {rd.posts.slice(0, 4).map((post: any, i: number) => (
+                  <div key={i} className="flex items-start gap-2 text-xs py-1 border-b border-border/20 last:border-0">
+                    <span className="shrink-0 mt-0.5">
+                      {post.sentiment === "bullish" ? "🟢" : post.sentiment === "bearish" ? "🔴" : "⚪"}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <a href={post.permalink} target="_blank" rel="noopener noreferrer"
+                        className="text-foreground/80 hover:text-foreground transition-colors flex items-start gap-1 group">
+                        <span className="line-clamp-1">{post.title}</span>
+                        <ExternalLink className="w-2.5 h-2.5 shrink-0 mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </a>
+                      <div className="flex items-center gap-1.5 mt-0.5 text-muted-foreground/60">
+                        <span className="text-orange-400/70">{post.subreddit}</span>
+                        <span>⬆{post.score}</span>
+                        <span>💬{post.numComments}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       <div className="text-[10px] text-muted-foreground/40 text-left" dir="ltr">
         {new Date(data.generatedAt).toLocaleTimeString("he-IL")} · Yahoo Finance + AI

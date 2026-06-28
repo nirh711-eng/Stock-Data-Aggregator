@@ -6,7 +6,8 @@ import { GetStockDeepAnalysisParams } from "@workspace/api-zod";
 import { jsonrepair } from "jsonrepair";
 import {
   fetchFinnhub, fetchFmp, fetchFredMacro,
-  fetchTechnicals, fetchNewsSentiment, fetchMarketaux, fetchPolygon,
+  fetchTechnicals, fetchNewsSentiment, fetchMarketaux, fetchPolygon, fetchReddit,
+  type RedditData,
 } from "../lib/enrichment";
 import pino from "pino";
 
@@ -167,7 +168,7 @@ async function runDeepAnalysisJob(upperTicker: string): Promise<void> {
     const [
       quoteResult, qsResult, quarterlyData,
       finnhubData, fmpData, fredData, yNewsData,
-      techData, sentimentData, marketauxData, polygonData,
+      techData, sentimentData, marketauxData, polygonData, redditData,
     ] = await Promise.all([
       yahooFinance.quote(upperTicker).catch(() => null),
       qsWithTimeout,
@@ -180,6 +181,7 @@ async function runDeepAnalysisJob(upperTicker: string): Promise<void> {
       fetchNewsSentiment(upperTicker),
       fetchMarketaux(upperTicker),
       fetchPolygon(upperTicker),
+      fetchReddit(upperTicker),
     ]);
 
     if (!quoteResult) {
@@ -577,6 +579,9 @@ ${fmpData?.geoText ?? "  לא זמין"}
 
 --- מחזיקים מוסדיים (FMP) ---
 ${fmpData?.holdersText ?? "  לא זמין"}
+
+--- סנטימנט חברתי — Reddit ---
+${(redditData as RedditData | null)?.contextText ?? "  לא זמין (Reddit)"}
 `.trim();
 
     const systemPrompt = `אתה אנליסט ראשי (Head of Research) במחלקת ניתוח עומק של קרן גידור גלובלית מובילה.
@@ -730,6 +735,7 @@ ${dataContext}
       fiveYearForecast: parsed.fiveYearForecast ?? null,
       kpiTracker: parsed.kpiTracker ?? null,
       riskMatrix: parsed.riskMatrix ?? null,
+      redditData: (redditData as RedditData | null) ?? null,
       analystConsensus,
       generatedAt: new Date().toISOString(),
     };
