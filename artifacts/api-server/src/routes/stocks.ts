@@ -14,6 +14,16 @@ const YahooFinance = yahooFinanceMod as any;
 const yahooFinance = new YahooFinance();
 const router = Router();
 
+const STOCK_CACHE_TTL_MS = 5 * 60 * 1000;
+const _stockCache = new Map<string, { data: unknown; ts: number }>();
+function getStockCache(key: string): unknown | null {
+  const entry = _stockCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > STOCK_CACHE_TTL_MS) { _stockCache.delete(key); return null; }
+  return entry.data;
+}
+function setStockCache(key: string, data: unknown) { _stockCache.set(key, { data, ts: Date.now() }); }
+
 function formatMarketCap(value: number): string {
   if (value >= 1e12) return `$${(value / 1e12).toFixed(2)}T`;
   if (value >= 1e9) return `$${(value / 1e9).toFixed(2)}B`;
@@ -37,6 +47,9 @@ router.get("/stocks/:ticker", async (req, res) => {
 
   const { ticker } = parse.data;
   const upperTicker = ticker.toUpperCase();
+
+  const cached = getStockCache(upperTicker);
+  if (cached) { res.json(cached); return; }
 
   try {
     const [quote, quoteSummary] = await Promise.allSettled([
@@ -180,6 +193,7 @@ Focus on key strengths, risks, and what investors should watch.`;
       dividendYield: q.trailingAnnualDividendYield ?? null,
     };
 
+    setStockCache(upperTicker, stockData);
     res.json(stockData);
   } catch (err) {
     req.log?.error({ err }, "Failed to fetch stock data");

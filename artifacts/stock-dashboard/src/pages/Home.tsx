@@ -140,7 +140,7 @@ export default function Home() {
               <Activity className="w-6 h-6" />
               StockPulse
             </h1>
-            <p className="text-sm text-muted-foreground mt-1">Professional Market Intelligence</p>
+            <p className="text-sm text-muted-foreground mt-1">מודיעין שוק מקצועי</p>
           </div>
           
           <div className="flex items-center gap-3 w-full md:w-auto">
@@ -149,11 +149,11 @@ export default function Home() {
               <Input 
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
-                placeholder="Enter ticker (e.g. AAPL)..."
+                placeholder="הזן טיקר (לדוגמה AAPL)..."
                 className="pl-10 bg-card border-card-border font-mono uppercase text-lg"
               />
               <Button type="submit" className="absolute right-1 top-1/2 -translate-y-1/2 h-8 px-3 text-xs" variant="secondary">
-                Search
+                חפש
               </Button>
             </form>
             <NotificationCenter
@@ -261,12 +261,12 @@ export default function Home() {
             <div className="inline-flex items-center justify-center p-4 bg-muted rounded-full mb-4">
               <TrendingUp className="w-8 h-8 text-primary" />
             </div>
-            <h2 className="text-xl font-semibold text-foreground">Market Overview</h2>
+            <h2 className="text-xl font-semibold text-foreground">סקירת שוק</h2>
             <p className="text-muted-foreground max-w-md mx-auto">
-              Search for a stock ticker above to access real-time price data, AI-driven summaries, and comprehensive financial reports.
+              חפש טיקר למעלה לקבלת נתוני מחיר בזמן אמת, סיכומי AI, וניתוח פיננסי מקיף.
             </p>
             <div className="flex flex-wrap justify-center gap-3 mt-8">
-              <span className="text-sm text-muted-foreground self-center mr-2">Popular:</span>
+              <span className="text-sm text-muted-foreground self-center mr-2">פופולרי:</span>
               {POPULAR_TICKERS.map(ticker => (
                 <Button key={ticker} variant="outline" onClick={() => selectTicker(ticker)} className="font-mono">
                   {ticker}
@@ -357,13 +357,13 @@ export default function Home() {
                   {(stockData.marketState === "PRE" || stockData.marketState === "PREPRE") && (
                     <span className="flex items-center gap-1.5 text-xs font-medium text-yellow-400 bg-yellow-400/10 px-2 py-0.5 rounded-full">
                       <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
-                      Pre-Market
+                      טרום מסחר
                     </span>
                   )}
                   {(stockData.marketState === "POST" || stockData.marketState === "POSTPOST") && (
                     <span className="flex items-center gap-1.5 text-xs font-medium text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded-full">
                       <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                      After-Hours
+                      לאחר שעות
                     </span>
                   )}
                   {stockData.marketState === "CLOSED" && (
@@ -390,7 +390,7 @@ export default function Home() {
                 {/* Pre-market price */}
                 {stockData.preMarketPrice != null && (stockData.marketState === "PRE" || stockData.marketState === "PREPRE") && (
                   <div className="flex items-center gap-2 justify-start md:justify-end mt-2 bg-yellow-400/5 border border-yellow-400/20 rounded-lg px-3 py-1.5">
-                    <span className="text-xs text-yellow-400/70 font-medium">Pre-Market</span>
+                    <span className="text-xs text-yellow-400/70 font-medium">טרום מסחר</span>
                     <span className="font-mono font-semibold text-yellow-300">
                       {formatHebrewNumber(stockData.preMarketPrice, { style: 'currency', currency: stockData.currency })}
                     </span>
@@ -405,7 +405,7 @@ export default function Home() {
                 {/* Post-market price */}
                 {stockData.postMarketPrice != null && (stockData.marketState === "POST" || stockData.marketState === "POSTPOST" || stockData.marketState === "CLOSED") && (
                   <div className="flex items-center gap-2 justify-start md:justify-end mt-2 bg-blue-400/5 border border-blue-400/20 rounded-lg px-3 py-1.5">
-                    <span className="text-xs text-blue-400/70 font-medium">After-Hours</span>
+                    <span className="text-xs text-blue-400/70 font-medium">לאחר שעות</span>
                     <span className="font-mono font-semibold text-blue-300">
                       {formatHebrewNumber(stockData.postMarketPrice, { style: 'currency', currency: stockData.currency })}
                     </span>
@@ -443,7 +443,7 @@ export default function Home() {
               <div className="flex items-center justify-between px-4 py-2 bg-card border-b border-border">
                 <span className="text-xs font-medium text-muted-foreground flex items-center gap-2">
                   <Activity className="w-3.5 h-3.5" />
-                  Live Chart
+                  גרף חי
                 </span>
                 <span className="text-[10px] text-muted-foreground/40 font-mono">Powered by TradingView</span>
               </div>
@@ -455,7 +455,7 @@ export default function Home() {
               <Card className="bg-card border-card-border">
                 <CardContent className="p-4">
                   <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider flex items-center gap-1">
-                    <Building2 className="w-3 h-3" /> Market Cap
+                    <Building2 className="w-3 h-3" /> שווי שוק
                   </div>
                   <div className="text-lg font-mono font-semibold">{stockData.marketCapFormatted}</div>
                 </CardContent>
@@ -475,11 +475,11 @@ export default function Home() {
               <Card className="bg-card border-card-border">
                 <CardContent className="p-4">
                   <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider flex items-center gap-1">
-                    <BarChart2 className="w-3 h-3" /> Volume
+                    <BarChart2 className="w-3 h-3" /> מחזור
                   </div>
                   <div className="text-lg font-mono font-semibold">{formatVolume(stockData.volume)}</div>
                   {stockData.averageVolume != null && (
-                    <div className="text-xs text-muted-foreground/50 mt-0.5 font-mono">avg {formatVolume(stockData.averageVolume)}</div>
+                    <div className="text-xs text-muted-foreground/50 mt-0.5 font-mono">ממוצע {formatVolume(stockData.averageVolume)}</div>
                   )}
                 </CardContent>
               </Card>
@@ -490,7 +490,7 @@ export default function Home() {
               <Card className="bg-card border-card-border">
                 <CardContent className="p-4">
                   <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider flex items-center gap-1">
-                    <ArrowUpDown className="w-3 h-3" /> Day Range
+                    <ArrowUpDown className="w-3 h-3" /> טווח יומי
                   </div>
                   {stockData.dayLow != null && stockData.dayHigh != null ? (
                     <>
@@ -509,7 +509,7 @@ export default function Home() {
               </Card>
               <Card className="bg-card border-card-border">
                 <CardContent className="p-4">
-                  <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">52-Week Range</div>
+                  <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">טווח 52 שבועות</div>
                   {stockData.fiftyTwoWeekLow != null && stockData.fiftyTwoWeekHigh != null ? (
                     <>
                       <div className="text-sm font-mono font-semibold">
@@ -527,20 +527,20 @@ export default function Home() {
               </Card>
               <Card className="bg-card border-card-border">
                 <CardContent className="p-4">
-                  <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">Bid / Ask</div>
+                  <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">ביד / אסק</div>
                   <div className="text-sm font-mono font-semibold">
                     {stockData.bid != null ? `$${stockData.bid.toFixed(2)}` : '—'}
                     <span className="text-muted-foreground/40 mx-1">/</span>
                     {stockData.ask != null ? `$${stockData.ask.toFixed(2)}` : '—'}
                   </div>
                   {stockData.bid != null && stockData.ask != null && (
-                    <div className="text-xs text-muted-foreground/50 mt-0.5">spread ${(stockData.ask - stockData.bid).toFixed(2)}</div>
+                    <div className="text-xs text-muted-foreground/50 mt-0.5">מרווח ${(stockData.ask - stockData.bid).toFixed(2)}</div>
                   )}
                 </CardContent>
               </Card>
               <Card className="bg-card border-card-border">
                 <CardContent className="p-4">
-                  <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">Div. Yield</div>
+                  <div className="text-xs text-muted-foreground mb-1 uppercase tracking-wider">תשואת דיבידנד</div>
                   <div className="text-lg font-mono font-semibold">
                     {stockData.dividendYield != null
                       ? `${(stockData.dividendYield * 100).toFixed(2)}%`
@@ -559,7 +559,7 @@ export default function Home() {
                   <CardHeader className="pb-2">
                     <CardTitle className="text-sm font-medium text-primary flex items-center gap-2">
                       <FileText className="w-4 h-4" />
-                      AI Analysis Summary
+                      סיכום ניתוח AI
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
@@ -574,7 +574,7 @@ export default function Home() {
                     ) : stockData.aiSummary ? (
                       <p className="text-sm leading-relaxed text-foreground/90">{stockData.aiSummary}</p>
                     ) : (
-                      <p className="text-sm text-muted-foreground">No analysis available.</p>
+                      <p className="text-sm text-muted-foreground">אין ניתוח זמין.</p>
                     )}
                   </CardContent>
                 </Card>
@@ -599,21 +599,21 @@ export default function Home() {
                   <CardHeader>
                     <CardTitle className="text-sm font-medium flex items-center gap-2">
                       <Building2 className="w-4 h-4 text-muted-foreground" />
-                      Latest Financials
+                      נתונים פיננסיים
                     </CardTitle>
-                    <CardDescription className="text-xs">Period: {stockData.quarterlyReport.period}</CardDescription>
+                    <CardDescription className="text-xs">תקופה: {stockData.quarterlyReport.period}</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="flex justify-between items-center border-b border-border pb-2">
-                      <span className="text-sm text-muted-foreground">Revenue</span>
+                      <span className="text-sm text-muted-foreground">הכנסות</span>
                       <span className="font-mono text-sm font-medium">{stockData.quarterlyReport.revenueFormatted || '-'}</span>
                     </div>
                     <div className="flex justify-between items-center border-b border-border pb-2">
-                      <span className="text-sm text-muted-foreground">Net Income</span>
+                      <span className="text-sm text-muted-foreground">רווח נקי</span>
                       <span className="font-mono text-sm font-medium">{stockData.quarterlyReport.netIncomeFormatted || '-'}</span>
                     </div>
                     <div className="flex justify-between items-center border-b border-border pb-2">
-                      <span className="text-sm text-muted-foreground">Rev Growth</span>
+                      <span className="text-sm text-muted-foreground">צמיחה</span>
                       <span className={`font-mono text-sm font-medium ${stockData.quarterlyReport.revenueGrowth && stockData.quarterlyReport.revenueGrowth >= 0 ? 'text-positive' : 'text-destructive'}`}>
                         {stockData.quarterlyReport.revenueGrowth ? `${formatHebrewNumber(stockData.quarterlyReport.revenueGrowth * 100, { maximumFractionDigits: 2 })}%` : '-'}
                       </span>
@@ -630,7 +630,7 @@ export default function Home() {
                   <CardHeader>
                     <CardTitle className="text-sm font-medium flex items-center gap-2">
                       <Calendar className="w-4 h-4 text-muted-foreground" />
-                      Upcoming Events
+                      אירועים קרובים
                     </CardTitle>
                   </CardHeader>
                   <CardContent>

@@ -193,13 +193,13 @@ export function DailyAnalysis({ ticker }: DailyAnalysisProps) {
         <Card className="bg-card/50 border-border/60">
           <CardContent className="pt-3 pb-3">
             <div className="flex items-center gap-1 text-xs text-muted-foreground mb-2">
-              Short Interest
+              פוזיציות שורט
             </div>
             <div className="text-lg font-bold text-foreground">
-              {dm.shortPercentOfFloat != null ? (dm.shortPercentOfFloat * 100).toFixed(1) + "%" : "N/A"}
+              {dm.shortPercentOfFloat != null ? (dm.shortPercentOfFloat * 100).toFixed(1) + "%" : "—"}
             </div>
             <div className="text-[10px] text-muted-foreground">
-              {dm.shortRatio != null ? `Days to cover: ${dm.shortRatio.toFixed(1)}` : ""}
+              {dm.shortRatio != null ? `ימים לסגירה: ${dm.shortRatio.toFixed(1)}` : ""}
             </div>
           </CardContent>
         </Card>

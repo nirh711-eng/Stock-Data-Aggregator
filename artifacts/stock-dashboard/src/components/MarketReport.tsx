@@ -48,9 +48,9 @@ const PctBadge = ({ v, label }: { v: number | null | undefined; label?: string }
 };
 
 const MARKET_STATE_META: Record<string, { label: string; color: string; bg: string }> = {
-  PRE:     { label: "Pre-Market",   color: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/30" },
+  PRE:     { label: "טרום מסחר",   color: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/30" },
   REGULAR: { label: "מסחר פעיל",   color: "text-green-400",  bg: "bg-green-500/10 border-green-500/30" },
-  POST:    { label: "After-Hours",  color: "text-blue-400",   bg: "bg-blue-500/10 border-blue-500/30" },
+  POST:    { label: "לאחר שעות",   color: "text-blue-400",   bg: "bg-blue-500/10 border-blue-500/30" },
   CLOSED:  { label: "שוק סגור",    color: "text-muted-foreground", bg: "bg-muted/20 border-border" },
 };
 
@@ -544,8 +544,8 @@ export function MarketReport() {
               <Calendar className="w-3.5 h-3.5" />
               לוח אירועים כלכלי — היום/מחר
               <div className="flex items-center gap-2 mr-auto text-[10px] font-normal text-muted-foreground">
-                <span className="text-red-400 font-bold">H</span> = High impact
-                <span className="text-yellow-400 font-bold">M</span> = Medium
+                <span className="text-red-400 font-bold">H</span> = השפעה גבוהה
+                <span className="text-yellow-400 font-bold">M</span> = בינוני
               </div>
             </CardTitle>
           </CardHeader>

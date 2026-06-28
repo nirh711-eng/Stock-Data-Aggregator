@@ -100,7 +100,7 @@ export function DeepAnalysis({ ticker }: DeepAnalysisProps) {
           <BrainCircuit className="w-8 h-8" />
         </div>
         <div className="max-w-md space-y-2">
-          <h3 className="text-xl font-bold font-sans">Hedge Fund Deep Analysis</h3>
+          <h3 className="text-xl font-bold font-sans">ניתוח עמוק — רמת קרן גידור</h3>
           <p className="text-muted-foreground text-sm">
             ניתוח מוסדי מלא — 15 שלבים: שרשרת ערך, הנהלה, ROIC, DCF 3 תרחישים, תחזית 5 שנים, מטריצת סיכונים ועוד. התהליך לוקח 60-90 שניות בפעם הראשונה ונשמר cache לשעה.
           </p>
