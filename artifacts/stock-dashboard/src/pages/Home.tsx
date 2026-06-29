@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, TrendingUp, TrendingDown, Clock, Building2, Calendar, FileText, Activity, Star, RefreshCw, AlertTriangle, BarChart2, ArrowUpDown, Layers, Globe, Zap, MessageSquare } from "lucide-react";
+import { Search, TrendingUp, TrendingDown, Clock, Building2, Calendar, FileText, Activity, Star, RefreshCw, AlertTriangle, BarChart2, ArrowUpDown, Layers, Globe, Zap, MessageSquare, Landmark } from "lucide-react";
 import { 
   useGetStockData, 
   useGetStockSummary, 
@@ -22,6 +22,7 @@ import { TradingViewChart } from "@/components/TradingViewChart";
 import { MarketReport } from "@/components/MarketReport";
 import { BottleneckExplorer } from "@/components/BottleneckExplorer";
 import { SocialPulse } from "@/components/SocialPulse";
+import { BondYields } from "@/components/BondYields";
 import { useWatchlist } from "@/hooks/useWatchlist";
 
 const POPULAR_TICKERS = ["AAPL", "TSLA", "NVDA", "MSFT"];
@@ -61,7 +62,7 @@ const formatHebrewNumber = (num: number, options?: Intl.NumberFormatOptions) => 
 export default function Home() {
   const [searchInput, setSearchInput] = useState("");
   const [activeTicker, setActiveTicker] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"search" | "sectors" | "market" | "bottlenecks" | "social">("search");
+  const [activeTab, setActiveTab] = useState<"search" | "sectors" | "market" | "bottlenecks" | "social" | "bonds">("search");
   const queryClient = useQueryClient();
 
   const {
@@ -220,7 +221,34 @@ export default function Home() {
             <MessageSquare className="w-3.5 h-3.5" />
             סנטימנט חברתי
           </button>
+          <button
+            onClick={() => setActiveTab("bonds")}
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
+              ${activeTab === "bonds"
+                ? "border-emerald-400 text-emerald-300"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"}`}
+          >
+            <Landmark className="w-3.5 h-3.5" />
+            תשואות אג&quot;ח
+          </button>
         </div>
+
+        {/* Bond Yields Tab */}
+        {activeTab === "bonds" && (
+          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <Card className="bg-card border-border">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium flex items-center gap-2 text-muted-foreground">
+                  <Landmark className="w-4 h-4 text-emerald-400" />
+                  תשואות אג&quot;ח ממשלתי — ארה&quot;ב וישראל
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <BondYields />
+              </CardContent>
+            </Card>
+          </div>
+        )}
 
         {/* Social Pulse Tab */}
         {activeTab === "social" && (

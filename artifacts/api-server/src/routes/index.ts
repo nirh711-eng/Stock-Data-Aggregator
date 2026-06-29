@@ -8,6 +8,7 @@ import watchlistRouter from "./watchlist";
 import sectorsRouter from "./sectors";
 import bottlenecksRouter from "./bottlenecks";
 import socialRouter from "./social";
+import bondsRouter from "./bonds";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,6 @@ router.use(deepAnalysisRouter);
 router.use(dailyAnalysisRouter);
 router.use(marketReportRouter);
 router.use(socialRouter);
+router.use(bondsRouter);
 
 export default router;
