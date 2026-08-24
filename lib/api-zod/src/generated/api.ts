@@ -496,3 +496,43 @@ export const GetMarketDailyReportResponse = zod.object({
     actionableInsights: zod.string(),
   }),
 });
+
+/**
+ * Reads the configured news and social sources and returns positive or negative items for tracked stocks and their sectors
+ * @summary Scan tracked stocks and sectors for new market signals
+ */
+export const scanMarketAlertsBodyWatchlistMax = 20;
+
+export const ScanMarketAlertsBody = zod.object({
+  watchlist: zod
+    .array(
+      zod.object({
+        ticker: zod.string(),
+        companyName: zod.string().nullish(),
+        sector: zod.string().nullish(),
+      }),
+    )
+    .max(scanMarketAlertsBodyWatchlistMax),
+});
+
+export const ScanMarketAlertsResponse = zod.object({
+  alerts: zod.array(
+    zod.object({
+      id: zod.string(),
+      subjectType: zod.enum(["stock", "sector"]),
+      ticker: zod.string(),
+      subject: zod.string(),
+      title: zod.string(),
+      source: zod.string(),
+      url: zod.string(),
+      publishedAt: zod.string(),
+      sentiment: zod.enum(["positive", "negative"]),
+      impactTitle: zod.string(),
+      impactSummary: zod.string(),
+    }),
+  ),
+  scannedTickers: zod.number(),
+  scannedSectors: zod.number(),
+  sources: zod.array(zod.string()),
+  checkedAt: zod.string(),
+});

@@ -4,6 +4,8 @@ export interface WatchlistItem {
   ticker: string;
   addedAt: string;
   lastKnownReportDate: string | null;
+  companyName?: string | null;
+  sector?: string | null;
 }
 
 export interface WatchlistAlert {
@@ -60,12 +62,12 @@ export function useWatchlist() {
   const unreadCount = alerts.filter((a) => !a.seenAt).length;
 
   const addToWatchlist = useCallback(
-    (ticker: string, lastKnownReportDate: string | null = null) => {
+    (ticker: string, lastKnownReportDate: string | null = null, companyName: string | null = null, sector: string | null = null) => {
       setWatchlistState((prev) => {
         if (prev.find((w) => w.ticker === ticker)) return prev;
         const next = [
           ...prev,
-          { ticker, addedAt: new Date().toISOString(), lastKnownReportDate },
+          { ticker, addedAt: new Date().toISOString(), lastKnownReportDate, companyName, sector },
         ];
         saveWatchlist(next);
         return next;
@@ -90,6 +92,8 @@ export function useWatchlist() {
   const updateLastKnownDate = useCallback(
     (ticker: string, date: string | null) => {
       setWatchlistState((prev) => {
+        const current = prev.find((w) => w.ticker === ticker);
+        if (!current || current.lastKnownReportDate === date) return prev;
         const next = prev.map((w) =>
           w.ticker === ticker ? { ...w, lastKnownReportDate: date } : w
         );

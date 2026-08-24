@@ -12,6 +12,8 @@ tags:
     description: Health operations
   - name: stocks
     description: Stock data operations
+  - name: alerts
+    description: Market intelligence alert operations
 paths:
   /healthz:
     get:
@@ -221,6 +223,38 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/MarketDailyReport"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /alerts/scan:
+    post:
+      operationId: scanMarketAlerts
+      tags: [alerts]
+      summary: Scan tracked stocks and sectors for new market signals
+      description: Reads the configured news and social sources and returns positive or negative items for tracked stocks and their sectors
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MarketAlertScanRequest"
+      responses:
+        "200":
+          description: Market intelligence alerts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketAlertScanResponse"
+        "400":
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "500":
           description: Server error
           content:
@@ -1355,6 +1389,95 @@ components:
         - companyName
         - type
         - message
+
+    MarketAlertScanRequest:
+      type: object
+      properties:
+        watchlist:
+          type: array
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/MarketAlertWatch"
+      required:
+        - watchlist
+
+    MarketAlertWatch:
+      type: object
+      properties:
+        ticker:
+          type: string
+        companyName:
+          type: string
+          nullable: true
+        sector:
+          type: string
+          nullable: true
+      required:
+        - ticker
+
+    MarketAlertScanResponse:
+      type: object
+      properties:
+        alerts:
+          type: array
+          items:
+            $ref: "#/components/schemas/MarketAlert"
+        scannedTickers:
+          type: integer
+        scannedSectors:
+          type: integer
+        sources:
+          type: array
+          items:
+            type: string
+        checkedAt:
+          type: string
+      required:
+        - alerts
+        - scannedTickers
+        - scannedSectors
+        - sources
+        - checkedAt
+
+    MarketAlert:
+      type: object
+      properties:
+        id:
+          type: string
+        subjectType:
+          type: string
+          enum: ["stock", "sector"]
+        ticker:
+          type: string
+        subject:
+          type: string
+        title:
+          type: string
+        source:
+          type: string
+        url:
+          type: string
+        publishedAt:
+          type: string
+        sentiment:
+          type: string
+          enum: ["positive", "negative"]
+        impactTitle:
+          type: string
+        impactSummary:
+          type: string
+      required:
+        - id
+        - subjectType
+        - ticker
+        - subject
+        - title
+        - source
+        - url
+        - publishedAt
+        - sentiment
+        - impactTitle
+        - impactSummary
 
     ErrorResponse:
       type: object

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, TrendingUp, TrendingDown, Clock, Building2, Calendar, FileText, Activity, Star, RefreshCw, AlertTriangle, BarChart2, ArrowUpDown, Layers, Globe, Zap, MessageSquare, Landmark } from "lucide-react";
+import { Search, TrendingUp, TrendingDown, Clock, Building2, Calendar, FileText, Activity, Star, RefreshCw, AlertTriangle, BarChart2, ArrowUpDown, Layers, Globe, Zap, MessageSquare, Landmark, Bell } from "lucide-react";
 import { 
   useGetStockData, 
   useGetStockSummary, 
@@ -23,6 +23,7 @@ import { MarketReport } from "@/components/MarketReport";
 import { BottleneckExplorer } from "@/components/BottleneckExplorer";
 import { SocialPulse } from "@/components/SocialPulse";
 import { BondYields } from "@/components/BondYields";
+import { MarketAlerts } from "@/components/MarketAlerts";
 import { useWatchlist } from "@/hooks/useWatchlist";
 
 const POPULAR_TICKERS = ["AAPL", "TSLA", "NVDA", "MSFT"];
@@ -62,10 +63,11 @@ const formatHebrewNumber = (num: number, options?: Intl.NumberFormatOptions) => 
 export default function Home() {
   const [searchInput, setSearchInput] = useState("");
   const [activeTicker, setActiveTicker] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"search" | "sectors" | "market" | "bottlenecks" | "social" | "bonds">("search");
+  const [activeTab, setActiveTab] = useState<"search" | "sectors" | "market" | "bottlenecks" | "social" | "bonds" | "alerts">("search");
   const queryClient = useQueryClient();
 
   const {
+    watchlist,
     alerts,
     unreadCount,
     isChecking,
@@ -124,7 +126,12 @@ export default function Home() {
       removeFromWatchlist(activeTicker);
     } else {
       await requestNotificationPermission();
-      addToWatchlist(activeTicker, stockData?.quarterlyReport.reportDate ?? null);
+      addToWatchlist(
+        activeTicker, 
+        stockData?.quarterlyReport.reportDate ?? null,
+        stockData?.companyName ?? null,
+        stockData?.sector ?? null
+      );
     }
   };
 
@@ -231,7 +238,24 @@ export default function Home() {
             <Landmark className="w-3.5 h-3.5" />
             תשואות אג&quot;ח
           </button>
+          <button
+            onClick={() => setActiveTab("alerts")}
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
+              ${activeTab === "alerts"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"}`}
+          >
+            <Bell className="w-3.5 h-3.5" />
+            התראות שוק
+          </button>
         </div>
+
+        {/* Alerts Tab */}
+        {activeTab === "alerts" && (
+          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <MarketAlerts watchlist={watchlist} onSelectTicker={selectTicker} />
+          </div>
+        )}
 
         {/* Bond Yields Tab */}
         {activeTab === "bonds" && (

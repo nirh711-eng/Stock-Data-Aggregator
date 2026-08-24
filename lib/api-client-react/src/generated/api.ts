@@ -22,6 +22,8 @@ import type {
   ErrorResponse,
   GetStockHistoryParams,
   HealthStatus,
+  MarketAlertScanRequest,
+  MarketAlertScanResponse,
   MarketDailyReport,
   StockData,
   StockHistory,
@@ -746,3 +748,90 @@ export function useGetMarketDailyReport<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Reads the configured news and social sources and returns positive or negative items for tracked stocks and their sectors
+ * @summary Scan tracked stocks and sectors for new market signals
+ */
+export const getScanMarketAlertsUrl = () => {
+  return `/api/alerts/scan`;
+};
+
+export const scanMarketAlerts = async (
+  marketAlertScanRequest: MarketAlertScanRequest,
+  options?: RequestInit,
+): Promise<MarketAlertScanResponse> => {
+  return customFetch<MarketAlertScanResponse>(getScanMarketAlertsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(marketAlertScanRequest),
+  });
+};
+
+export const getScanMarketAlertsMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof scanMarketAlerts>>,
+    TError,
+    { data: BodyType<MarketAlertScanRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof scanMarketAlerts>>,
+  TError,
+  { data: BodyType<MarketAlertScanRequest> },
+  TContext
+> => {
+  const mutationKey = ["scanMarketAlerts"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof scanMarketAlerts>>,
+    { data: BodyType<MarketAlertScanRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return scanMarketAlerts(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ScanMarketAlertsMutationResult = NonNullable<
+  Awaited<ReturnType<typeof scanMarketAlerts>>
+>;
+export type ScanMarketAlertsMutationBody = BodyType<MarketAlertScanRequest>;
+export type ScanMarketAlertsMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Scan tracked stocks and sectors for new market signals
+ */
+export const useScanMarketAlerts = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof scanMarketAlerts>>,
+    TError,
+    { data: BodyType<MarketAlertScanRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof scanMarketAlerts>>,
+  TError,
+  { data: BodyType<MarketAlertScanRequest> },
+  TContext
+> => {
+  return useMutation(getScanMarketAlertsMutationOptions(options));
+};

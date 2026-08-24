@@ -670,7 +670,8 @@ export async function fetchNewsArticles(ticker: string): Promise<NewsData | null
 
   if (articles.length === 0) return null;
   const result: NewsData = { articles: articles.slice(0, 20) };
-  setCache(cacheKey, result, 30 * 60 * 1000);
+  // News drives the alert feed, so keep it fresh enough for the five-minute scanner.
+  setCache(cacheKey, result, 5 * 60 * 1000);
   return result;
 }
 

@@ -469,6 +469,55 @@ export interface WatchlistCheckResponse {
   checkedAt: string;
 }
 
+export interface MarketAlertWatch {
+  ticker: string;
+  companyName?: string | null;
+  sector?: string | null;
+}
+
+export interface MarketAlertScanRequest {
+  /** @maxItems 20 */
+  watchlist: MarketAlertWatch[];
+}
+
+export type MarketAlertSubjectType =
+  (typeof MarketAlertSubjectType)[keyof typeof MarketAlertSubjectType];
+
+export const MarketAlertSubjectType = {
+  stock: "stock",
+  sector: "sector",
+} as const;
+
+export type MarketAlertSentiment =
+  (typeof MarketAlertSentiment)[keyof typeof MarketAlertSentiment];
+
+export const MarketAlertSentiment = {
+  positive: "positive",
+  negative: "negative",
+} as const;
+
+export interface MarketAlert {
+  id: string;
+  subjectType: MarketAlertSubjectType;
+  ticker: string;
+  subject: string;
+  title: string;
+  source: string;
+  url: string;
+  publishedAt: string;
+  sentiment: MarketAlertSentiment;
+  impactTitle: string;
+  impactSummary: string;
+}
+
+export interface MarketAlertScanResponse {
+  alerts: MarketAlert[];
+  scannedTickers: number;
+  scannedSectors: number;
+  sources: string[];
+  checkedAt: string;
+}
+
 export interface ErrorResponse {
   error: string;
   message: string;
