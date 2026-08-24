@@ -3,3 +3,4 @@
 - [OpenAI proxy quirks](openai-proxy-quirks.md) — gpt-5-mini via Replit proxy: max_completion_tokens=8192; no json_object response_format; import from @workspace/integrations-openai-ai-server.
 - [yahoo-finance2 v3](yahoo-finance2-v3.md) — requires `new YahooFinance()` constructor; suppressNotices in constructor not in quoteSummary.
 - [Bottleneck route](bottleneck-route.md) — /api/bottlenecks: AI market structure analysis, 6h cache, uses @workspace/integrations-openai-ai-server not raw openai.
+- [Safe article URL fetching](safe-article-url-fetching.md) — Metadata fetches pin a validated public DNS address per request and must recheck each redirect.

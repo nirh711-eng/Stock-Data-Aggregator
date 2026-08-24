@@ -475,6 +475,20 @@ export interface MarketAlertWatch {
   sector?: string | null;
 }
 
+export type ArticleType = (typeof ArticleType)[keyof typeof ArticleType];
+
+export const ArticleType = {
+  earnings: "earnings",
+  legal: "legal",
+  merger: "merger",
+  product: "product",
+  leadership: "leadership",
+  regulation: "regulation",
+  analyst: "analyst",
+  market: "market",
+  other: "other",
+} as const;
+
 export interface TrackedMarketArticle {
   ticker: string;
   title: string;
@@ -482,6 +496,7 @@ export interface TrackedMarketArticle {
   source: string;
   publishedAt: string;
   summary?: string | null;
+  articleType?: ArticleType;
 }
 
 export interface MarketAlertScanRequest {
@@ -489,6 +504,19 @@ export interface MarketAlertScanRequest {
   watchlist: MarketAlertWatch[];
   /** @maxItems 100 */
   trackedArticles?: TrackedMarketArticle[];
+}
+
+export interface ArticleMetadataRequest {
+  url: string;
+}
+
+export interface ArticleMetadata {
+  title: string;
+  source: string;
+  publishedAt: string;
+  summary: string;
+  articleType: ArticleType;
+  fetchedAt: string;
 }
 
 export type MarketAlertSubjectType =
@@ -519,6 +547,7 @@ export interface MarketAlert {
   summary: string;
   publishedAt: string;
   sentiment: MarketAlertSentiment;
+  articleType: ArticleType;
   /**
    * @minimum 0
    * @maximum 100

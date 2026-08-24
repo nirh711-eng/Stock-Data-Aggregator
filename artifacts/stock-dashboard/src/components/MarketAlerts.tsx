@@ -12,6 +12,17 @@ import { SECTOR_ETF_BY_NAME } from "@/lib/marketSectors";
 const LOCAL_ALERTS_KEY = "stockpulse_market_alerts_data";
 const SEEN_ALERTS_KEY = "stockpulse_market_alerts_seen";
 const ALERT_WINDOW_MS = 24 * 60 * 60 * 1000;
+const ARTICLE_TYPE_LABELS: Record<string, string> = {
+  earnings: "דוחות ותוצאות",
+  legal: "משפטי",
+  merger: "מיזוגים ורכישות",
+  product: "מוצר והשקה",
+  leadership: "הנהלה",
+  regulation: "רגולציה",
+  analyst: "אנליסטים",
+  market: "שוק ומסחר",
+  other: "חדשות כלליות",
+};
 
 function isRecentAlert(alert: MarketAlert, referenceMs: number): boolean {
   const publishedAtMs = Date.parse(alert.publishedAt);
@@ -296,6 +307,9 @@ export function MarketAlerts({
                         <span className="text-xs font-medium text-foreground/80 bg-muted border border-border px-2.5 py-1 rounded-md">
                           {alert.subjectType === 'sector' ? 'השפעה סקטוריאלית' : 'אירוע חברה'}: {alert.subject}
                         </span>
+                        <span className="text-xs font-medium text-muted-foreground bg-muted/70 border border-border px-2.5 py-1 rounded-md">
+                          {ARTICLE_TYPE_LABELS[alert.articleType] ?? ARTICLE_TYPE_LABELS.other}
+                        </span>
                         <Badge variant="outline" className="text-[11px] font-medium">
                           איכות {alert.qualityScore ?? 0}/100
                         </Badge>
@@ -338,6 +352,7 @@ export function MarketAlerts({
                              source: alert.source,
                              publishedAt: alert.publishedAt,
                              summary: alert.summary,
+                             articleType: alert.articleType,
                            })}
                            disabled={isArticleTracked(alert.ticker, alert.url)}
                            className="h-7 px-2 text-xs"

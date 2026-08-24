@@ -230,6 +230,37 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /alerts/article-metadata:
+    post:
+      operationId: fetchArticleMetadata
+      tags: [alerts]
+      summary: Read public article metadata from a URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ArticleMetadataRequest"
+      responses:
+        "200":
+          description: Extracted article metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ArticleMetadata"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "422":
+          description: Article metadata could not be read
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /alerts/scan:
     post:
       operationId: scanMarketAlerts
@@ -1436,12 +1467,50 @@ components:
         summary:
           type: string
           nullable: true
+        articleType:
+          $ref: "#/components/schemas/ArticleType"
       required:
         - ticker
         - title
         - url
         - source
         - publishedAt
+
+    ArticleMetadataRequest:
+      type: object
+      properties:
+        url:
+          type: string
+          format: uri
+      required:
+        - url
+
+    ArticleType:
+      type: string
+      enum: ["earnings", "legal", "merger", "product", "leadership", "regulation", "analyst", "market", "other"]
+
+    ArticleMetadata:
+      type: object
+      properties:
+        title:
+          type: string
+        source:
+          type: string
+        publishedAt:
+          type: string
+        summary:
+          type: string
+        articleType:
+          $ref: "#/components/schemas/ArticleType"
+        fetchedAt:
+          type: string
+      required:
+        - title
+        - source
+        - publishedAt
+        - summary
+        - articleType
+        - fetchedAt
 
     MarketAlertScanResponse:
       type: object
@@ -1492,6 +1561,8 @@ components:
         sentiment:
           type: string
           enum: ["positive", "negative", "neutral"]
+        articleType:
+          $ref: "#/components/schemas/ArticleType"
         qualityScore:
           type: integer
           minimum: 0
@@ -1511,6 +1582,7 @@ components:
         - summary
         - publishedAt
         - sentiment
+        - articleType
         - qualityScore
         - impactTitle
         - impactSummary

@@ -17,6 +17,8 @@ import type {
 } from "@tanstack/react-query";
 
 import type {
+  ArticleMetadata,
+  ArticleMetadataRequest,
   DailyAnalysis,
   DeepAnalysis,
   ErrorResponse,
@@ -748,6 +750,92 @@ export function useGetMarketDailyReport<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * @summary Read public article metadata from a URL
+ */
+export const getFetchArticleMetadataUrl = () => {
+  return `/api/alerts/article-metadata`;
+};
+
+export const fetchArticleMetadata = async (
+  articleMetadataRequest: ArticleMetadataRequest,
+  options?: RequestInit,
+): Promise<ArticleMetadata> => {
+  return customFetch<ArticleMetadata>(getFetchArticleMetadataUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(articleMetadataRequest),
+  });
+};
+
+export const getFetchArticleMetadataMutationOptions = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof fetchArticleMetadata>>,
+    TError,
+    { data: BodyType<ArticleMetadataRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof fetchArticleMetadata>>,
+  TError,
+  { data: BodyType<ArticleMetadataRequest> },
+  TContext
+> => {
+  const mutationKey = ["fetchArticleMetadata"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof fetchArticleMetadata>>,
+    { data: BodyType<ArticleMetadataRequest> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return fetchArticleMetadata(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type FetchArticleMetadataMutationResult = NonNullable<
+  Awaited<ReturnType<typeof fetchArticleMetadata>>
+>;
+export type FetchArticleMetadataMutationBody = BodyType<ArticleMetadataRequest>;
+export type FetchArticleMetadataMutationError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Read public article metadata from a URL
+ */
+export const useFetchArticleMetadata = <
+  TError = ErrorType<ErrorResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof fetchArticleMetadata>>,
+    TError,
+    { data: BodyType<ArticleMetadataRequest> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof fetchArticleMetadata>>,
+  TError,
+  { data: BodyType<ArticleMetadataRequest> },
+  TContext
+> => {
+  return useMutation(getFetchArticleMetadataMutationOptions(options));
+};
 
 /**
  * Reads the configured news and social sources and returns positive or negative items for tracked stocks and their sectors

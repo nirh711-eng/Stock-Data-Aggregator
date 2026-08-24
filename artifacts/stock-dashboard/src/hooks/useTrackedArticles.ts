@@ -8,6 +8,7 @@ export interface TrackedArticle {
   source: string;
   publishedAt: string;
   summary?: string | null;
+  articleType?: "earnings" | "legal" | "merger" | "product" | "leadership" | "regulation" | "analyst" | "market" | "other";
   addedAt: string;
 }
 
@@ -16,6 +17,9 @@ type TrackedArticlesByTicker = Record<string, TrackedArticle[]>;
 const TRACKED_ARTICLES_KEY = "stockpulse_tracked_market_articles";
 export const MAX_TRACKED_ARTICLES = 100;
 export const MAX_TRACKED_ARTICLES_PER_TICKER = 20;
+const ARTICLE_TYPES = new Set<NonNullable<TrackedArticle["articleType"]>>([
+  "earnings", "legal", "merger", "product", "leadership", "regulation", "analyst", "market", "other",
+]);
 
 function loadTrackedArticles(): TrackedArticlesByTicker {
   try {
@@ -39,6 +43,10 @@ function loadTrackedArticles(): TrackedArticlesByTicker {
         } catch {
           continue;
         }
+        const articleType = typeof article.articleType === "string"
+          && ARTICLE_TYPES.has(article.articleType as NonNullable<TrackedArticle["articleType"]>)
+          ? article.articleType as NonNullable<TrackedArticle["articleType"]>
+          : "other";
         candidates.push({
           id: typeof article.id === "string" ? article.id : getArticleId(ticker, url),
           ticker,
@@ -47,6 +55,7 @@ function loadTrackedArticles(): TrackedArticlesByTicker {
           source: typeof article.source === "string" && article.source.trim() ? article.source.trim() : "מקור שמור",
           publishedAt: typeof article.publishedAt === "string" ? article.publishedAt : new Date().toISOString(),
           summary: typeof article.summary === "string" ? article.summary : "",
+          articleType,
           addedAt: typeof article.addedAt === "string" ? article.addedAt : new Date().toISOString(),
         });
       }

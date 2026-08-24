@@ -1,5 +1,10 @@
 import { Router } from "express";
 import { fetchNewsArticles } from "../lib/enrichment";
+import {
+  classifyArticleType,
+  fetchArticleMetadata,
+  type ArticleType,
+} from "../lib/article-metadata";
 
 const router = Router();
 
@@ -16,6 +21,7 @@ type TrackedArticle = {
   source?: string;
   publishedAt?: string;
   summary?: string | null;
+  articleType?: ArticleType;
 };
 
 type NormalizedTrackedArticle = {
@@ -25,6 +31,7 @@ type NormalizedTrackedArticle = {
   source: string;
   publishedAt: string;
   summary: string;
+  articleType: ArticleType;
 };
 
 type Alert = {
@@ -38,6 +45,7 @@ type Alert = {
   summary: string;
   publishedAt: string;
   sentiment: "positive" | "negative" | "neutral";
+  articleType: ArticleType;
   qualityScore: number;
   impactTitle: string;
   impactSummary: string;
@@ -95,6 +103,33 @@ const ESTABLISHED_FINANCE_SOURCES = [
   "seeking alpha", "investing.com", "morningstar", "barron's", "benzinga",
   "the motley fool", "etf trends",
 ];
+const ARTICLE_TYPE_LABELS: Record<ArticleType, string> = {
+  earnings: "דוחות ותוצאות",
+  legal: "משפטי",
+  merger: "מיזוגים ורכישות",
+  product: "מוצר והשקה",
+  leadership: "הנהלה",
+  regulation: "רגולציה",
+  analyst: "אנליסטים",
+  market: "שוק ומסחר",
+  other: "חדשות כלליות",
+};
+const ARTICLE_TYPES = new Set<ArticleType>(Object.keys(ARTICLE_TYPE_LABELS) as ArticleType[]);
+
+function normalizeArticleType(value: unknown): ArticleType {
+  return typeof value === "string" && ARTICLE_TYPES.has(value as ArticleType)
+    ? value as ArticleType
+    : "other";
+}
+
+function getLogSafeUrl(rawUrl: string): string {
+  try {
+    const parsed = new URL(rawUrl);
+    return `${parsed.protocol}//${parsed.hostname}${parsed.pathname}`;
+  } catch {
+    return "invalid-url";
+  }
+}
 
 function normalizeSector(sector: string | null | undefined): string | null {
   if (!sector) return null;
@@ -143,20 +178,25 @@ function getQualityScore(
   );
 }
 
-function makeImpact(subject: string, sentiment: "positive" | "negative" | "neutral", title: string): {
+function makeImpact(
+  subject: string,
+  sentiment: "positive" | "negative" | "neutral",
+  title: string,
+  articleType: ArticleType,
+): {
   impactTitle: string;
   impactSummary: string;
 } {
   if (sentiment === "neutral") {
     return {
-      impactTitle: `עדכון למעקב ב${subject}`,
+      impactTitle: `עדכון למעקב ב${subject} · ${ARTICLE_TYPE_LABELS[articleType]}`,
       impactSummary: `הכתבה נשמרה כמקור מועדף למעקב. היא אינה מסומנת כרגע כחיובית או שלילית, אך תישאר בהקשר הסריקות הבאות. (${title.slice(0, 70)}${title.length > 70 ? "…" : ""})`,
     };
   }
   const positive = sentiment === "positive";
   const impactTitle = positive
-    ? `פוטנציאל תמיכה ב${subject}`
-    : `סיכון ללחץ על ${subject}`;
+    ? `פוטנציאל תמיכה ב${subject} · ${ARTICLE_TYPE_LABELS[articleType]}`
+    : `סיכון ללחץ על ${subject} · ${ARTICLE_TYPE_LABELS[articleType]}`;
   const impactSummary = positive
     ? `הכותרת עשויה לתמוך ב${subject} דרך שיפור בציפיות לצמיחה, רווחיות או ביקוש. כדאי לבדוק אם השוק כבר תמחר את החדשה ומה אומרים הנתונים במסחר.`
     : `הכותרת עלולה להכביד על ${subject} דרך פגיעה בציפיות לצמיחה, רווחיות או אמון המשקיעים. כדאי לעקוב אחר עוצמת התגובה והאם הסיכון נקודתי או מתפשט.`;
@@ -171,6 +211,7 @@ function buildAlert(
     publishedAt: string;
     sentiment: "positive" | "negative" | "neutral" | null;
     summary: string;
+    articleType: ArticleType;
   },
   subjectType: "stock" | "sector",
   ticker: string,
@@ -191,7 +232,7 @@ function buildAlert(
     : inferSentiment(`${article.title} ${article.summary}`);
   if (!inferredSentiment && !allowNeutral) return null;
   const sentiment = inferredSentiment ?? "neutral";
-  const impact = makeImpact(subject, sentiment, article.title);
+  const impact = makeImpact(subject, sentiment, article.title, article.articleType);
   return {
     id: `${subjectType}:${ticker}:${article.url}:${sentiment}`,
     subjectType,
@@ -203,10 +244,35 @@ function buildAlert(
     summary: article.summary ?? "",
     publishedAt: article.publishedAt,
     sentiment,
+    articleType: article.articleType,
     qualityScore: getQualityScore(article, publishedAtMs, scanStartedAtMs, isTracked),
     ...impact,
   };
 }
+
+router.post("/alerts/article-metadata", async (req, res) => {
+  const url = typeof req.body?.url === "string" ? req.body.url.trim() : "";
+  if (!url) {
+    res.status(400).json({ error: "Bad request", message: "A public article URL is required" });
+    return;
+  }
+
+  try {
+    res.json(await fetchArticleMetadata(url));
+  } catch (err) {
+    req.log?.warn(
+      {
+        articleTarget: getLogSafeUrl(url),
+        reason: err instanceof Error ? err.message : "Unknown metadata error",
+      },
+      "Unable to read article metadata",
+    );
+    res.status(422).json({
+      error: "Article metadata unavailable",
+      message: "לא הצלחנו לקרוא את פרטי הכתבה מהקישור. אפשר להזין כותרת ותקציר ידנית.",
+    });
+  }
+});
 
 router.post("/alerts/scan", async (req, res) => {
   const rawWatchlist = Array.isArray(req.body?.watchlist) ? req.body.watchlist as WatchItem[] : [];
@@ -249,6 +315,7 @@ router.post("/alerts/scan", async (req, res) => {
       source: article.source?.trim() || "מקור שמור",
       publishedAt: article.publishedAt ?? new Date().toISOString(),
       summary: article.summary?.trim() || "",
+      articleType: normalizeArticleType(article.articleType),
     }))
     .filter((article) => {
       if (!watchlistTickers.has(article.ticker) && !activeSectorEtfs.has(article.ticker)) {
@@ -286,9 +353,14 @@ router.post("/alerts/scan", async (req, res) => {
         publishedAt: article.publishedAt ?? new Date().toISOString(),
         sentiment: null,
         summary: article.summary ?? "",
+        articleType: article.articleType,
         isTracked: true,
       })),
-      ...fetchedArticles.map((article) => ({ ...article, isTracked: false })),
+      ...fetchedArticles.map((article) => ({
+        ...article,
+        articleType: classifyArticleType(`${article.title} ${article.summary}`),
+        isTracked: false,
+      })),
     ];
     const seenUrls = new Set<string>();
     return combined.filter((article) => {

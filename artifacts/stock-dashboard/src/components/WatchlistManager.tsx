@@ -1,5 +1,6 @@
 import { FormEvent, useState } from "react";
 import { Bookmark, Link2, Plus, Star, Trash2, X } from "lucide-react";
+import { useFetchArticleMetadata } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -19,6 +20,17 @@ import {
 import { SECTOR_ETF_BY_NAME } from "@/lib/marketSectors";
 
 type AddArticleInput = Omit<TrackedArticle, "id" | "ticker" | "addedAt">;
+const ARTICLE_TYPE_LABELS: Record<NonNullable<TrackedArticle["articleType"]>, string> = {
+  earnings: "דוחות ותוצאות",
+  legal: "משפטי",
+  merger: "מיזוגים ורכישות",
+  product: "מוצר והשקה",
+  leadership: "הנהלה",
+  regulation: "רגולציה",
+  analyst: "אנליסטים",
+  market: "שוק ומסחר",
+  other: "חדשות כלליות",
+};
 
 export function WatchlistManager({
   watchlist,
@@ -45,6 +57,8 @@ export function WatchlistManager({
     summary: string;
   }>>({});
   const [articleError, setArticleError] = useState("");
+  const [metadataTicker, setMetadataTicker] = useState<string | null>(null);
+  const { mutate: fetchArticleMetadata } = useFetchArticleMetadata();
   const sectorGroups = [...new Map(
     watchlist.flatMap((item) => {
       const etf = item.sector ? SECTOR_ETF_BY_NAME[item.sector] : null;
@@ -104,10 +118,6 @@ export function WatchlistManager({
       setArticleError("ניתן לשמור רק קישורי http או https.");
       return;
     }
-    if (!title) {
-      setArticleError("יש להוסיף כותרת לכתבה כדי שנוכל לנתח אותה בסריקות הבאות.");
-      return;
-    }
     if ((trackedArticles[item.ticker] ?? []).length >= MAX_TRACKED_ARTICLES_PER_TICKER) {
       setArticleError(`ניתן לשמור עד ${MAX_TRACKED_ARTICLES_PER_TICKER} כתבות עבור כל טיקר.`);
       return;
@@ -117,22 +127,52 @@ export function WatchlistManager({
       return;
     }
 
-    const added = onAddArticle(item.ticker, {
-      title,
-      url,
-      source: parsedUrl.hostname.replace(/^www\./, ""),
-      publishedAt: new Date().toISOString(),
-      summary: draft.summary.trim(),
-    });
-    if (!added) {
-      setArticleError("הכתבה הזו כבר שמורה עבור הטיקר.");
-      return;
-    }
+    const saveArticle = (article: AddArticleInput, notice?: string) => {
+      const added = onAddArticle(item.ticker, article);
+      if (!added) {
+        setArticleError("הכתבה הזו כבר שמורה עבור הטיקר.");
+        return;
+      }
+      setArticleError(notice ?? "");
+      setArticleDrafts((previous) => ({
+        ...previous,
+        [item.ticker]: { url: "", title: "", summary: "" },
+      }));
+    };
+
     setArticleError("");
-    setArticleDrafts((previous) => ({
-      ...previous,
-      [item.ticker]: { url: "", title: "", summary: "" },
-    }));
+    setMetadataTicker(item.ticker);
+    fetchArticleMetadata(
+      { data: { url } },
+      {
+        onSuccess: (metadata) => {
+          setMetadataTicker(null);
+          saveArticle({
+            title: title || metadata.title,
+            url,
+            source: metadata.source || parsedUrl.hostname.replace(/^www\./, ""),
+            publishedAt: metadata.publishedAt,
+            summary: draft.summary.trim() || metadata.summary,
+            articleType: metadata.articleType,
+          });
+        },
+        onError: () => {
+          setMetadataTicker(null);
+          if (title) {
+            saveArticle({
+              title,
+              url,
+              source: parsedUrl.hostname.replace(/^www\./, ""),
+              publishedAt: new Date().toISOString(),
+              summary: draft.summary.trim(),
+              articleType: "other",
+            }, "לא הצלחנו לקרוא את הקישור, לכן נשמרו הפרטים שהזנת ידנית.");
+            return;
+          }
+          setArticleError("לא הצלחנו לקרוא את פרטי הכתבה. אפשר להזין כותרת ותקציר ידנית ולשמור.");
+        },
+      },
+    );
   };
 
   return (
@@ -153,7 +193,7 @@ export function WatchlistManager({
             ניהול רשימת מעקב ומקורות
           </DialogTitle>
           <DialogDescription>
-            הוסף או הסר טיקרים, ושמור כתבות חשובות כדי לתת להן עדיפות בסריקות הבאות.
+            הוסף או הסר טיקרים, והדבק קישור לכתבה כדי לנתח ולשמור אותה בעדיפות בסריקות הבאות.
           </DialogDescription>
         </DialogHeader>
 
@@ -256,13 +296,19 @@ export function WatchlistManager({
                             },
                           }));
                         }}
-                        placeholder="כותרת הכתבה (לניתוח)"
+                        placeholder="כותרת (אופציונלי אם הקישור ציבורי)"
                         aria-label={`כותרת הכתבה עבור ${item.ticker}`}
                         className="text-xs bg-background"
                       />
-                      <Button type="submit" variant="secondary" size="sm" className="shrink-0">
+                      <Button
+                        type="submit"
+                        variant="secondary"
+                        size="sm"
+                        className="shrink-0"
+                        disabled={metadataTicker === item.ticker}
+                      >
                         <Link2 className="w-3.5 h-3.5" />
-                        שמור
+                        {metadataTicker === item.ticker ? "מנתח..." : "נתח ושמור"}
                       </Button>
                     </div>
                     <Input
@@ -300,6 +346,9 @@ export function WatchlistManager({
                           >
                             {article.title}
                           </a>
+                          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                            {ARTICLE_TYPE_LABELS[article.articleType ?? "other"]}
+                          </span>
                           <button
                             type="button"
                             onClick={() => onRemoveArticle(item.ticker, article.id)}
@@ -320,7 +369,7 @@ export function WatchlistManager({
         )}
         {articleError && <p className="text-xs text-destructive">{articleError}</p>}
         <p className="text-[11px] leading-relaxed text-muted-foreground">
-          מקורות שמורים נשמרים בדפדפן הזה, נשלחים בסריקה הבאה ומשמשים כהקשר מועדף לניתוח.
+          קישורים ציבוריים מנותחים אוטומטית. אם אתר חוסם קריאה, אפשר להשלים כותרת ותקציר ידנית.
         </p>
       </DialogContent>
     </Dialog>

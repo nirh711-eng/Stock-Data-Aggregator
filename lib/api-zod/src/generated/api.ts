@@ -498,6 +498,32 @@ export const GetMarketDailyReportResponse = zod.object({
 });
 
 /**
+ * @summary Read public article metadata from a URL
+ */
+export const FetchArticleMetadataBody = zod.object({
+  url: zod.string().url(),
+});
+
+export const FetchArticleMetadataResponse = zod.object({
+  title: zod.string(),
+  source: zod.string(),
+  publishedAt: zod.string(),
+  summary: zod.string(),
+  articleType: zod.enum([
+    "earnings",
+    "legal",
+    "merger",
+    "product",
+    "leadership",
+    "regulation",
+    "analyst",
+    "market",
+    "other",
+  ]),
+  fetchedAt: zod.string(),
+});
+
+/**
  * Reads the configured news and social sources and returns positive or negative items for tracked stocks and their sectors
  * @summary Scan tracked stocks and sectors for new market signals
  */
@@ -524,6 +550,19 @@ export const ScanMarketAlertsBody = zod.object({
         source: zod.string(),
         publishedAt: zod.string(),
         summary: zod.string().nullish(),
+        articleType: zod
+          .enum([
+            "earnings",
+            "legal",
+            "merger",
+            "product",
+            "leadership",
+            "regulation",
+            "analyst",
+            "market",
+            "other",
+          ])
+          .optional(),
       }),
     )
     .max(scanMarketAlertsBodyTrackedArticlesMax)
@@ -546,6 +585,17 @@ export const ScanMarketAlertsResponse = zod.object({
       summary: zod.string(),
       publishedAt: zod.string(),
       sentiment: zod.enum(["positive", "negative", "neutral"]),
+      articleType: zod.enum([
+        "earnings",
+        "legal",
+        "merger",
+        "product",
+        "leadership",
+        "regulation",
+        "analyst",
+        "market",
+        "other",
+      ]),
       qualityScore: zod
         .number()
         .min(scanMarketAlertsResponseAlertsItemQualityScoreMin)
