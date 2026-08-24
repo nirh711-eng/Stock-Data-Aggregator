@@ -9,6 +9,24 @@ type WatchItem = {
   sector?: string | null;
 };
 
+type TrackedArticle = {
+  ticker?: string;
+  title?: string;
+  url?: string;
+  source?: string;
+  publishedAt?: string;
+  summary?: string | null;
+};
+
+type NormalizedTrackedArticle = {
+  ticker: string;
+  title: string;
+  url: string;
+  source: string;
+  publishedAt: string;
+  summary: string;
+};
+
 type Alert = {
   id: string;
   subjectType: "stock" | "sector";
@@ -17,8 +35,9 @@ type Alert = {
   title: string;
   source: string;
   url: string;
+  summary: string;
   publishedAt: string;
-  sentiment: "positive" | "negative";
+  sentiment: "positive" | "negative" | "neutral";
   impactTitle: string;
   impactSummary: string;
 };
@@ -78,10 +97,16 @@ function inferSentiment(text: string): "positive" | "negative" | null {
   return positive > negative ? "positive" : "negative";
 }
 
-function makeImpact(subject: string, sentiment: "positive" | "negative", title: string): {
+function makeImpact(subject: string, sentiment: "positive" | "negative" | "neutral", title: string): {
   impactTitle: string;
   impactSummary: string;
 } {
+  if (sentiment === "neutral") {
+    return {
+      impactTitle: `עדכון למעקב ב${subject}`,
+      impactSummary: `הכתבה נשמרה כמקור מועדף למעקב. היא אינה מסומנת כרגע כחיובית או שלילית, אך תישאר בהקשר הסריקות הבאות. (${title.slice(0, 70)}${title.length > 70 ? "…" : ""})`,
+    };
+  }
   const positive = sentiment === "positive";
   const impactTitle = positive
     ? `פוטנציאל תמיכה ב${subject}`
@@ -104,11 +129,13 @@ function buildAlert(
   subjectType: "stock" | "sector",
   ticker: string,
   subject: string,
+  allowNeutral = false,
 ): Alert | null {
-  const sentiment = article.sentiment === "positive" || article.sentiment === "negative"
+  const inferredSentiment = article.sentiment === "positive" || article.sentiment === "negative"
     ? article.sentiment
     : inferSentiment(`${article.title} ${article.summary}`);
-  if (!sentiment) return null;
+  if (!inferredSentiment && !allowNeutral) return null;
+  const sentiment = inferredSentiment ?? "neutral";
   const impact = makeImpact(subject, sentiment, article.title);
   return {
     id: `${subjectType}:${ticker}:${article.url}:${sentiment}`,
@@ -118,6 +145,7 @@ function buildAlert(
     title: article.title,
     source: article.source || "מקור חדשות",
     url: article.url,
+    summary: article.summary ?? "",
     publishedAt: article.publishedAt,
     sentiment,
     ...impact,
@@ -126,6 +154,9 @@ function buildAlert(
 
 router.post("/alerts/scan", async (req, res) => {
   const rawWatchlist = Array.isArray(req.body?.watchlist) ? req.body.watchlist as WatchItem[] : [];
+  const rawTrackedArticles = Array.isArray(req.body?.trackedArticles)
+    ? req.body.trackedArticles as TrackedArticle[]
+    : [];
   const watchlist = rawWatchlist
     .map((item) => ({
       ticker: (item.ticker ?? "").toUpperCase().trim(),
@@ -139,6 +170,74 @@ router.post("/alerts/scan", async (req, res) => {
     res.status(400).json({ error: "Bad request", message: "No valid tickers supplied" });
     return;
   }
+  if (rawWatchlist.length > 20 || rawTrackedArticles.length > 100) {
+    res.status(400).json({
+      error: "Bad request",
+      message: "A scan can include up to 20 tickers and 100 tracked articles",
+    });
+    return;
+  }
+
+  const watchlistTickers = new Set(watchlist.map((item) => item.ticker));
+  const activeSectorEtfs = new Set(
+    watchlist.flatMap((item) => {
+      const sector = item.sector ? SECTOR_CONFIG.find((config) => config.name === item.sector) : null;
+      return sector ? [sector.etf] : [];
+    }),
+  );
+  const trackedArticles = rawTrackedArticles
+    .map((article) => ({
+      ticker: (article.ticker ?? "").toUpperCase().trim(),
+      title: article.title?.trim() || "",
+      url: article.url?.trim() || "",
+      source: article.source?.trim() || "מקור שמור",
+      publishedAt: article.publishedAt ?? new Date().toISOString(),
+      summary: article.summary?.trim() || "",
+    }))
+    .filter((article) => {
+      if (!watchlistTickers.has(article.ticker) && !activeSectorEtfs.has(article.ticker)) {
+        return false;
+      }
+      if (!article.title || !article.url) return false;
+      try {
+        const parsed = new URL(article.url);
+        return parsed.protocol === "http:" || parsed.protocol === "https:";
+      } catch {
+        return false;
+      }
+    })
+    .slice(0, 100);
+
+  const trackedByTicker = new Map<string, NormalizedTrackedArticle[]>();
+  for (const article of trackedArticles) {
+    const current = trackedByTicker.get(article.ticker) ?? [];
+    current.push(article);
+    trackedByTicker.set(article.ticker, current);
+  }
+
+  const prioritizeTrackedArticles = (
+    ticker: string,
+    fetchedArticles: NonNullable<Awaited<ReturnType<typeof fetchNewsArticles>>>["articles"],
+  ) => {
+    const preferred = trackedByTicker.get(ticker) ?? [];
+    const combined = [
+      ...preferred.map((article) => ({
+        title: article.title,
+        url: article.url,
+        source: article.source,
+        publishedAt: article.publishedAt ?? new Date().toISOString(),
+        sentiment: null,
+        summary: article.summary ?? "",
+      })),
+      ...fetchedArticles,
+    ];
+    const seenUrls = new Set<string>();
+    return combined.filter((article) => {
+      if (seenUrls.has(article.url)) return false;
+      seenUrls.add(article.url);
+      return true;
+    });
+  };
 
   try {
     const stockResults = await Promise.allSettled(
@@ -146,8 +245,14 @@ router.post("/alerts/scan", async (req, res) => {
         const data = await fetchNewsArticles(item.ticker);
         return {
           item,
-          alerts: (data?.articles ?? [])
-            .map((article) => buildAlert(article, "stock", item.ticker, item.companyName ?? item.ticker))
+          alerts: prioritizeTrackedArticles(item.ticker, data?.articles ?? [])
+            .map((article) => buildAlert(
+              article,
+              "stock",
+              item.ticker,
+              item.companyName ?? item.ticker,
+              (trackedByTicker.get(item.ticker) ?? []).some((tracked) => tracked.url === article.url),
+            ))
             .filter((alert): alert is Alert => Boolean(alert)),
         };
       }),
@@ -166,12 +271,13 @@ router.post("/alerts/scan", async (req, res) => {
     const sectorResults = await Promise.allSettled(
       [...sectorByName.entries()].map(async ([sector, config]) => {
         const data = await fetchNewsArticles(config.etf);
-        return (data?.articles ?? [])
+        return prioritizeTrackedArticles(config.etf, data?.articles ?? [])
           .map((article) => buildAlert(
             article,
             "sector",
             config.etf,
             sector,
+            (trackedByTicker.get(config.etf) ?? []).some((tracked) => tracked.url === article.url),
           ))
           .filter((alert): alert is Alert => Boolean(alert));
       }),

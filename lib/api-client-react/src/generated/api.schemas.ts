@@ -475,9 +475,20 @@ export interface MarketAlertWatch {
   sector?: string | null;
 }
 
+export interface TrackedMarketArticle {
+  ticker: string;
+  title: string;
+  url: string;
+  source: string;
+  publishedAt: string;
+  summary?: string | null;
+}
+
 export interface MarketAlertScanRequest {
   /** @maxItems 20 */
   watchlist: MarketAlertWatch[];
+  /** @maxItems 100 */
+  trackedArticles?: TrackedMarketArticle[];
 }
 
 export type MarketAlertSubjectType =
@@ -494,6 +505,7 @@ export type MarketAlertSentiment =
 export const MarketAlertSentiment = {
   positive: "positive",
   negative: "negative",
+  neutral: "neutral",
 } as const;
 
 export interface MarketAlert {
@@ -504,6 +516,7 @@ export interface MarketAlert {
   title: string;
   source: string;
   url: string;
+  summary: string;
   publishedAt: string;
   sentiment: MarketAlertSentiment;
   impactTitle: string;

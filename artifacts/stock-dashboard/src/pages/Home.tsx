@@ -125,6 +125,10 @@ export default function Home() {
     if (isWatched(activeTicker)) {
       removeFromWatchlist(activeTicker);
     } else {
+      if (watchlist.length >= 20) {
+        window.alert("ניתן לעקוב אחר עד 20 טיקרים בכל פעם. הסר טיקר קיים כדי להוסיף חדש.");
+        return;
+      }
       await requestNotificationPermission();
       addToWatchlist(
         activeTicker, 
@@ -132,6 +136,29 @@ export default function Home() {
         stockData?.companyName ?? null,
         stockData?.sector ?? null
       );
+    }
+  };
+
+  const addTickerFromAlerts = async (ticker: string): Promise<string | null> => {
+    try {
+      const response = await fetch(`/api/stocks/${ticker}`);
+      if (!response.ok) {
+        return `לא נמצא טיקר ${ticker}. בדוק את הסימול ונסה שוב.`;
+      }
+      const data = await response.json() as {
+        companyName?: string | null;
+        sector?: string | null;
+        quarterlyReport?: { reportDate?: string | null };
+      };
+      addToWatchlist(
+        ticker,
+        data.quarterlyReport?.reportDate ?? null,
+        data.companyName ?? null,
+        data.sector ?? null,
+      );
+      return null;
+    } catch {
+      return "לא ניתן לאמת את הטיקר כרגע. בדוק את החיבור ונסה שוב.";
     }
   };
 
@@ -253,7 +280,12 @@ export default function Home() {
         {/* Alerts Tab */}
         {activeTab === "alerts" && (
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
-            <MarketAlerts watchlist={watchlist} onSelectTicker={selectTicker} />
+            <MarketAlerts
+              watchlist={watchlist}
+              onSelectTicker={selectTicker}
+              onAddTicker={addTickerFromAlerts}
+              onRemoveTicker={removeFromWatchlist}
+            />
           </div>
         )}
 

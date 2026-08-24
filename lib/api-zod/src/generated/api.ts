@@ -503,6 +503,8 @@ export const GetMarketDailyReportResponse = zod.object({
  */
 export const scanMarketAlertsBodyWatchlistMax = 20;
 
+export const scanMarketAlertsBodyTrackedArticlesMax = 100;
+
 export const ScanMarketAlertsBody = zod.object({
   watchlist: zod
     .array(
@@ -513,6 +515,19 @@ export const ScanMarketAlertsBody = zod.object({
       }),
     )
     .max(scanMarketAlertsBodyWatchlistMax),
+  trackedArticles: zod
+    .array(
+      zod.object({
+        ticker: zod.string(),
+        title: zod.string(),
+        url: zod.string(),
+        source: zod.string(),
+        publishedAt: zod.string(),
+        summary: zod.string().nullish(),
+      }),
+    )
+    .max(scanMarketAlertsBodyTrackedArticlesMax)
+    .optional(),
 });
 
 export const ScanMarketAlertsResponse = zod.object({
@@ -525,8 +540,9 @@ export const ScanMarketAlertsResponse = zod.object({
       title: zod.string(),
       source: zod.string(),
       url: zod.string(),
+      summary: zod.string(),
       publishedAt: zod.string(),
-      sentiment: zod.enum(["positive", "negative"]),
+      sentiment: zod.enum(["positive", "negative", "neutral"]),
       impactTitle: zod.string(),
       impactSummary: zod.string(),
     }),

@@ -25,11 +25,32 @@ export interface WatchlistAlert {
 const WATCHLIST_KEY = "stockpulse_watchlist";
 const ALERTS_KEY = "stockpulse_alerts";
 const POLL_INTERVAL_MS = 5 * 60 * 1000;
+const MAX_WATCHLIST_ITEMS = 20;
 
 function loadWatchlist(): WatchlistItem[] {
   try {
     const raw = localStorage.getItem(WATCHLIST_KEY);
-    return raw ? (JSON.parse(raw) as WatchlistItem[]) : [];
+    const parsed = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(parsed)) return [];
+
+    const seen = new Set<string>();
+    const normalized = parsed.flatMap((item): WatchlistItem[] => {
+      const ticker = typeof item?.ticker === "string" ? item.ticker.trim().toUpperCase() : "";
+      if (!/^[A-Z]{1,6}$/.test(ticker) || seen.has(ticker)) return [];
+      seen.add(ticker);
+      return [{
+        ticker,
+        addedAt: typeof item.addedAt === "string" ? item.addedAt : new Date().toISOString(),
+        lastKnownReportDate: typeof item.lastKnownReportDate === "string" ? item.lastKnownReportDate : null,
+        companyName: typeof item.companyName === "string" ? item.companyName : null,
+        sector: typeof item.sector === "string" ? item.sector : null,
+      }];
+    }).slice(0, MAX_WATCHLIST_ITEMS);
+
+    if (JSON.stringify(parsed) !== JSON.stringify(normalized)) {
+      localStorage.setItem(WATCHLIST_KEY, JSON.stringify(normalized));
+    }
+    return normalized;
   } catch {
     return [];
   }
@@ -65,6 +86,7 @@ export function useWatchlist() {
     (ticker: string, lastKnownReportDate: string | null = null, companyName: string | null = null, sector: string | null = null) => {
       setWatchlistState((prev) => {
         if (prev.find((w) => w.ticker === ticker)) return prev;
+        if (prev.length >= MAX_WATCHLIST_ITEMS) return prev;
         const next = [
           ...prev,
           { ticker, addedAt: new Date().toISOString(), lastKnownReportDate, companyName, sector },

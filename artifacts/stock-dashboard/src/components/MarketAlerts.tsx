@@ -3,17 +3,25 @@ import { useScanMarketAlerts, type MarketAlert } from "@workspace/api-client-rea
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { RefreshCw, ExternalLink, Activity, Zap, TrendingUp, TrendingDown, Clock, Bell, Info } from "lucide-react";
+import { RefreshCw, ExternalLink, Activity, Zap, TrendingUp, TrendingDown, Clock, Bell, Info, Bookmark } from "lucide-react";
+import { WatchlistManager } from "@/components/WatchlistManager";
+import { useTrackedArticles } from "@/hooks/useTrackedArticles";
+import type { WatchlistItem } from "@/hooks/useWatchlist";
+import { SECTOR_ETF_BY_NAME } from "@/lib/marketSectors";
 
 const LOCAL_ALERTS_KEY = "stockpulse_market_alerts_data";
 const SEEN_ALERTS_KEY = "stockpulse_market_alerts_seen";
 
 export function MarketAlerts({ 
   watchlist, 
-  onSelectTicker 
+  onSelectTicker,
+  onAddTicker,
+  onRemoveTicker,
 }: { 
-  watchlist: Array<{ ticker: string; companyName?: string | null; sector?: string | null }>;
+  watchlist: WatchlistItem[];
   onSelectTicker: (ticker: string) => void;
+  onAddTicker: (ticker: string) => Promise<string | null>;
+  onRemoveTicker: (ticker: string) => void;
 }) {
   const [alerts, setAlerts] = useState<MarketAlert[]>(() => {
     try {
@@ -28,6 +36,20 @@ export function MarketAlerts({
   const lastScanRef = useRef<number>(0);
   const hasCompletedInitialScanRef = useRef(false);
   const scanInFlightRef = useRef(false);
+  const watchlistVersionRef = useRef(0);
+  const {
+    trackedArticles,
+    addTrackedArticle,
+    removeTrackedArticle,
+    isArticleTracked,
+  } = useTrackedArticles();
+
+  const watchlistKey = watchlist.map((item) => item.ticker).sort().join(",");
+
+  useEffect(() => {
+    watchlistVersionRef.current += 1;
+    lastScanRef.current = 0;
+  }, [watchlistKey]);
 
   const performScan = useCallback((force = false) => {
     if (!watchlist || watchlist.length === 0) return;
@@ -35,6 +57,7 @@ export function MarketAlerts({
     const now = Date.now();
     if (!force && now - lastScanRef.current < 5 * 60 * 1000) return;
     scanInFlightRef.current = true;
+    const scanVersion = watchlistVersionRef.current;
     
     scanAlerts(
       {
@@ -43,13 +66,15 @@ export function MarketAlerts({
             ticker: w.ticker,
             companyName: w.companyName,
             sector: w.sector,
-          }))
+           })),
+           trackedArticles: Object.values(trackedArticles).flat(),
         }
       },
       {
         onSuccess: (res) => {
-          lastScanRef.current = Date.now();
           scanInFlightRef.current = false;
+          if (scanVersion !== watchlistVersionRef.current) return;
+          lastScanRef.current = Date.now();
           
           setAlerts(prev => {
             const isInitialScan = !hasCompletedInitialScanRef.current;
@@ -95,7 +120,7 @@ export function MarketAlerts({
         },
       }
     );
-  }, [watchlist, scanAlerts]);
+  }, [watchlist, trackedArticles, scanAlerts]);
 
   useEffect(() => {
     performScan();
@@ -103,19 +128,41 @@ export function MarketAlerts({
     return () => clearInterval(interval);
   }, [performScan]);
 
-  if (watchlist.length === 0) {
-    return (
-      <div className="py-24 text-center space-y-6 bg-card border border-border rounded-xl shadow-sm">
-        <div className="inline-flex items-center justify-center p-5 bg-muted rounded-full mb-2">
-          <Bell className="w-10 h-10 text-muted-foreground" />
-        </div>
-        <h2 className="text-2xl font-semibold text-foreground">אין מניות במעקב</h2>
-        <p className="text-muted-foreground max-w-md mx-auto text-lg leading-relaxed">
-          סורק ההתראות החכם מנטר התפתחויות עבור המניות ברשימת המעקב שלך בלבד. הוסף מניות למעקב כדי להתחיל.
-        </p>
-      </div>
+  useEffect(() => {
+    const watchedTickers = new Set(watchlist.map((item) => item.ticker));
+    const watchedSectorEtfs = new Set(
+      watchlist
+        .map((item) => item.sector ? SECTOR_ETF_BY_NAME[item.sector] : null)
+        .filter((ticker): ticker is string => Boolean(ticker)),
     );
-  }
+    setAlerts((previous) => {
+      const next = watchlist.length === 0
+        ? []
+        : previous.filter((alert) =>
+            alert.subjectType === "sector"
+              ? watchedSectorEtfs.has(alert.ticker)
+              : watchedTickers.has(alert.ticker),
+          );
+      if (next.length === previous.length) return previous;
+      localStorage.setItem(LOCAL_ALERTS_KEY, JSON.stringify(next));
+
+      const seenStr = localStorage.getItem(SEEN_ALERTS_KEY);
+      const seenIds = seenStr ? JSON.parse(seenStr) as string[] : [];
+      localStorage.setItem(
+        SEEN_ALERTS_KEY,
+        JSON.stringify(seenIds.filter((id) => {
+          if (id.startsWith("stock:")) {
+            return [...watchedTickers].some((ticker) => id.startsWith(`stock:${ticker}:`));
+          }
+          if (id.startsWith("sector:")) {
+            return [...watchedSectorEtfs].some((ticker) => id.startsWith(`sector:${ticker}:`));
+          }
+          return false;
+        })),
+      );
+      return next;
+    });
+  }, [watchlist]);
 
   return (
     <div className="space-y-6">
@@ -130,26 +177,50 @@ export function MarketAlerts({
             המסוננים <strong>אך ורק עבור {watchlist.length} המניות</strong> הנמצאות ברשימת המעקב שלך.
           </p>
         </div>
-        <Button 
-          variant="outline" 
-          onClick={() => performScan(true)} 
-          disabled={isPending} 
-          className="shrink-0 font-medium bg-background"
-        >
-          <RefreshCw className={`w-4 h-4 ml-2 ${isPending ? "animate-spin" : ""}`} />
-          {isPending ? "סורק..." : "סרוק כעת"}
-        </Button>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <WatchlistManager
+            watchlist={watchlist}
+            trackedArticles={trackedArticles}
+            onAddTicker={onAddTicker}
+            onRemoveTicker={(ticker) => {
+              watchlistVersionRef.current += 1;
+              onRemoveTicker(ticker);
+            }}
+            onAddArticle={(ticker, article) => addTrackedArticle(ticker, article)}
+            onRemoveArticle={removeTrackedArticle}
+          />
+          <Button
+            variant="outline"
+            onClick={() => performScan(true)}
+            disabled={isPending}
+            className="font-medium bg-background"
+          >
+            <RefreshCw className={`w-4 h-4 ml-2 ${isPending ? "animate-spin" : ""}`} />
+            {isPending ? "סורק..." : "סרוק כעת"}
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-4">
-        {alerts.length === 0 && !isPending && (
+        {watchlist.length === 0 && (
+          <div className="py-16 text-center space-y-5 bg-card border border-dashed border-border rounded-xl shadow-sm">
+            <div className="inline-flex items-center justify-center p-4 bg-muted rounded-full">
+              <Bell className="w-9 h-9 text-muted-foreground" />
+            </div>
+            <h2 className="text-xl font-semibold text-foreground">אין מניות במעקב</h2>
+            <p className="text-muted-foreground max-w-md mx-auto leading-relaxed">
+              פתח את “ניהול מעקב” למעלה והוסף טיקר כדי להתחיל לקבל התראות חדשות.
+            </p>
+          </div>
+        )}
+        {watchlist.length > 0 && alerts.length === 0 && !isPending && (
           <div className="text-center py-20 bg-card/50 border border-dashed border-border rounded-xl">
              <Clock className="w-10 h-10 text-muted-foreground/30 mx-auto mb-4" />
              <p className="text-muted-foreground text-lg">לא נמצאו התראות חדשות לתיק המעקב שלך בשלב זה.</p>
           </div>
         )}
         
-        {alerts.length === 0 && isPending && (
+        {watchlist.length > 0 && alerts.length === 0 && isPending && (
           <div className="space-y-4">
             {[1, 2, 3].map(i => (
               <Card key={i} className="animate-pulse shadow-sm border-border">
@@ -159,7 +230,7 @@ export function MarketAlerts({
           </div>
         )}
 
-        {alerts.map(alert => (
+        {watchlist.length > 0 && alerts.map(alert => (
           <Card 
             key={alert.id} 
             className="overflow-hidden border-l-[5px] transition-all hover:shadow-md bg-card/80 backdrop-blur-sm" 
@@ -215,6 +286,23 @@ export function MarketAlerts({
                           קרא מקור
                           <ExternalLink className="w-3.5 h-3.5 mr-1" />
                         </a>
+                         <Button
+                           type="button"
+                           variant="ghost"
+                           size="sm"
+                           onClick={() => addTrackedArticle(alert.ticker, {
+                             title: alert.title,
+                             url: alert.url,
+                             source: alert.source,
+                             publishedAt: alert.publishedAt,
+                             summary: alert.summary,
+                           })}
+                           disabled={isArticleTracked(alert.ticker, alert.url)}
+                           className="h-7 px-2 text-xs"
+                         >
+                           <Bookmark className="w-3.5 h-3.5 ml-1" />
+                           {isArticleTracked(alert.ticker, alert.url) ? "מקור שמור" : "עקוב אחרי מקור"}
+                         </Button>
                       </div>
                    </div>
                    
