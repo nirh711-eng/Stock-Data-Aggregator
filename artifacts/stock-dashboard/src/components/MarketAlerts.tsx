@@ -11,6 +11,14 @@ import { SECTOR_ETF_BY_NAME } from "@/lib/marketSectors";
 
 const LOCAL_ALERTS_KEY = "stockpulse_market_alerts_data";
 const SEEN_ALERTS_KEY = "stockpulse_market_alerts_seen";
+const ALERT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+function isRecentAlert(alert: MarketAlert, referenceMs: number): boolean {
+  const publishedAtMs = Date.parse(alert.publishedAt);
+  return Number.isFinite(publishedAtMs)
+    && publishedAtMs >= referenceMs - ALERT_WINDOW_MS
+    && publishedAtMs <= referenceMs;
+}
 
 export function MarketAlerts({ 
   watchlist, 
@@ -26,7 +34,12 @@ export function MarketAlerts({
   const [alerts, setAlerts] = useState<MarketAlert[]>(() => {
     try {
       const saved = localStorage.getItem(LOCAL_ALERTS_KEY);
-      return saved ? JSON.parse(saved) : [];
+      const parsed = saved ? JSON.parse(saved) : [];
+      const recent = Array.isArray(parsed)
+        ? parsed.filter((alert) => isRecentAlert(alert, Date.now()))
+        : [];
+      localStorage.setItem(LOCAL_ALERTS_KEY, JSON.stringify(recent));
+      return recent;
     } catch {
       return [];
     }
@@ -75,14 +88,17 @@ export function MarketAlerts({
           scanInFlightRef.current = false;
           if (scanVersion !== watchlistVersionRef.current) return;
           lastScanRef.current = Date.now();
+          const scanReferenceMs = Date.parse(res.checkedAt) || Date.now();
+          const recentResponse = res.alerts.filter((alert) => isRecentAlert(alert, scanReferenceMs));
           
           setAlerts(prev => {
+            const recentPrevious = prev.filter((alert) => isRecentAlert(alert, scanReferenceMs));
             const isInitialScan = !hasCompletedInitialScanRef.current;
             const seenStr = localStorage.getItem(SEEN_ALERTS_KEY);
             const seenIds = new Set<string>(seenStr ? JSON.parse(seenStr) : []);
             const newAlerts: MarketAlert[] = [];
             
-            res.alerts.forEach(alert => {
+            recentResponse.forEach(alert => {
               if (!seenIds.has(alert.id)) {
                 newAlerts.push(alert);
                 seenIds.add(alert.id);
@@ -101,7 +117,7 @@ export function MarketAlerts({
             localStorage.setItem(SEEN_ALERTS_KEY, JSON.stringify(Array.from(seenIds)));
             hasCompletedInitialScanRef.current = true;
             
-            const merged = [...res.alerts, ...prev].reduce((acc, current) => {
+            const merged = [...recentResponse, ...recentPrevious].reduce((acc, current) => {
               if (!acc.some(x => x.id === current.id)) {
                 acc.push(current);
               }
@@ -164,6 +180,28 @@ export function MarketAlerts({
     });
   }, [watchlist]);
 
+  useEffect(() => {
+    const pruneExpiredAlerts = () => {
+      setAlerts((previous) => {
+        const next = previous.filter((alert) => isRecentAlert(alert, Date.now()));
+        if (next.length === previous.length) return previous;
+        localStorage.setItem(LOCAL_ALERTS_KEY, JSON.stringify(next));
+        return next;
+      });
+    };
+
+    pruneExpiredAlerts();
+    const nextExpiryMs = Math.min(
+      ...alerts
+        .map((alert) => Date.parse(alert.publishedAt) + ALERT_WINDOW_MS - Date.now())
+        .filter((delay) => Number.isFinite(delay) && delay > 0),
+    );
+    if (!Number.isFinite(nextExpiryMs)) return;
+
+    const timeout = window.setTimeout(pruneExpiredAlerts, Math.ceil(nextExpiryMs) + 25);
+    return () => window.clearTimeout(timeout);
+  }, [alerts]);
+
   return (
     <div className="space-y-6">
       <div className="bg-card border border-border rounded-xl p-5 shadow-sm flex flex-col sm:flex-row items-start sm:items-center gap-4">
@@ -173,8 +211,9 @@ export function MarketAlerts({
         <div className="flex-1">
           <h3 className="font-semibold text-foreground text-lg">סורק התראות וחדשות</h3>
           <p className="text-sm text-muted-foreground mt-1 max-w-3xl leading-relaxed">
-            המערכת סורקת באופן רציף מקורות מידע פיננסיים, הודעות חברה, ומגמות סקטוריאליות, 
-            המסוננים <strong>אך ורק עבור {watchlist.length} המניות</strong> הנמצאות ברשימת המעקב שלך.
+            המערכת סורקת באופן רציף מקורות מידע פיננסיים, הודעות חברה, ומגמות סקטוריאליות.
+            מוצגות רק כתבות מהיממה האחרונה, ממוינות מהחדשה לישנה ומסוננות
+            <strong> אך ורק עבור {watchlist.length} המניות</strong> הנמצאות ברשימת המעקב שלך.
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -257,6 +296,9 @@ export function MarketAlerts({
                         <span className="text-xs font-medium text-foreground/80 bg-muted border border-border px-2.5 py-1 rounded-md">
                           {alert.subjectType === 'sector' ? 'השפעה סקטוריאלית' : 'אירוע חברה'}: {alert.subject}
                         </span>
+                        <Badge variant="outline" className="text-[11px] font-medium">
+                          איכות {alert.qualityScore ?? 0}/100
+                        </Badge>
                         <span className="text-xs text-muted-foreground flex items-center gap-1.5 ml-auto">
                           <Clock className="w-3.5 h-3.5" />
                           {new Date(alert.publishedAt).toLocaleString('he-IL', { 

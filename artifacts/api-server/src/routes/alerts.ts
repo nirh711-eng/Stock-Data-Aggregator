@@ -38,6 +38,7 @@ type Alert = {
   summary: string;
   publishedAt: string;
   sentiment: "positive" | "negative" | "neutral";
+  qualityScore: number;
   impactTitle: string;
   impactSummary: string;
 };
@@ -83,6 +84,17 @@ const NEGATIVE_TERMS = [
   "decline", "negative", "בעיות", "ירידה", "הפסד", "אזהרה", "תביעה", "חקירה",
   "פיטורים", "שלילי",
 ];
+const ALERT_WINDOW_MS = 24 * 60 * 60 * 1000;
+const MAX_ALERTS_PER_SCAN = 80;
+const HIGH_QUALITY_SOURCES = [
+  "reuters", "associated press", "ap news", "bloomberg", "financial times",
+  "wall street journal", "cnbc", "marketwatch", "yahoo finance", "sec.gov",
+  "nasdaq", "finnhub", "marketaux",
+];
+const ESTABLISHED_FINANCE_SOURCES = [
+  "seeking alpha", "investing.com", "morningstar", "barron's", "benzinga",
+  "the motley fool", "etf trends",
+];
 
 function normalizeSector(sector: string | null | undefined): string | null {
   if (!sector) return null;
@@ -95,6 +107,40 @@ function inferSentiment(text: string): "positive" | "negative" | null {
   const negative = NEGATIVE_TERMS.filter((term) => normalized.includes(term.toLowerCase())).length;
   if (positive === negative) return null;
   return positive > negative ? "positive" : "negative";
+}
+
+function sourceQuality(source: string): number {
+  const normalized = source.toLowerCase();
+  if (HIGH_QUALITY_SOURCES.some((known) => normalized.includes(known))) return 1;
+  if (ESTABLISHED_FINANCE_SOURCES.some((known) => normalized.includes(known))) return 0.78;
+  if (normalized.includes(".gov") || normalized.includes("official")) return 0.9;
+  if (normalized.includes("news") || normalized.includes("finance")) return 0.62;
+  return 0.38;
+}
+
+function getQualityScore(
+  article: { title: string; summary: string; source: string; sentiment: "positive" | "negative" | "neutral" | null },
+  publishedAtMs: number,
+  scanStartedAtMs: number,
+  isTracked: boolean,
+): number {
+  const ageRatio = Math.max(0, Math.min(1, (scanStartedAtMs - publishedAtMs) / ALERT_WINDOW_MS));
+  const freshness = 1 - ageRatio;
+  const titleCompleteness = Math.min(1, article.title.trim().length / 80);
+  const summaryCompleteness = Math.min(1, article.summary.trim().length / 240);
+  const contentCompleteness = titleCompleteness * 0.65 + summaryCompleteness * 0.35;
+  const signalStrength = article.sentiment === "positive" || article.sentiment === "negative"
+    ? 1
+    : inferSentiment(`${article.title} ${article.summary}`) ? 0.85 : 0.65;
+  const trackedContext = isTracked ? 0.04 : 0;
+
+  return Math.round(
+    (sourceQuality(article.source) * 0.45
+      + contentCompleteness * 0.25
+      + signalStrength * 0.16
+      + freshness * 0.10
+      + trackedContext) * 100,
+  );
 }
 
 function makeImpact(subject: string, sentiment: "positive" | "negative" | "neutral", title: string): {
@@ -130,7 +176,16 @@ function buildAlert(
   ticker: string,
   subject: string,
   allowNeutral = false,
+  scanStartedAtMs = Date.now(),
+  isTracked = false,
 ): Alert | null {
+  const publishedAtMs = Date.parse(article.publishedAt);
+  if (
+    !Number.isFinite(publishedAtMs)
+    || publishedAtMs < scanStartedAtMs - ALERT_WINDOW_MS
+    || publishedAtMs > scanStartedAtMs
+  ) return null;
+
   const inferredSentiment = article.sentiment === "positive" || article.sentiment === "negative"
     ? article.sentiment
     : inferSentiment(`${article.title} ${article.summary}`);
@@ -148,6 +203,7 @@ function buildAlert(
     summary: article.summary ?? "",
     publishedAt: article.publishedAt,
     sentiment,
+    qualityScore: getQualityScore(article, publishedAtMs, scanStartedAtMs, isTracked),
     ...impact,
   };
 }
@@ -214,6 +270,8 @@ router.post("/alerts/scan", async (req, res) => {
     current.push(article);
     trackedByTicker.set(article.ticker, current);
   }
+  const scanStartedAtMs = Date.now();
+  const checkedAt = new Date(scanStartedAtMs).toISOString();
 
   const prioritizeTrackedArticles = (
     ticker: string,
@@ -228,8 +286,9 @@ router.post("/alerts/scan", async (req, res) => {
         publishedAt: article.publishedAt ?? new Date().toISOString(),
         sentiment: null,
         summary: article.summary ?? "",
+        isTracked: true,
       })),
-      ...fetchedArticles,
+      ...fetchedArticles.map((article) => ({ ...article, isTracked: false })),
     ];
     const seenUrls = new Set<string>();
     return combined.filter((article) => {
@@ -246,12 +305,14 @@ router.post("/alerts/scan", async (req, res) => {
         return {
           item,
           alerts: prioritizeTrackedArticles(item.ticker, data?.articles ?? [])
-            .map((article) => buildAlert(
+            .map(({ isTracked, ...article }) => buildAlert(
               article,
               "stock",
               item.ticker,
               item.companyName ?? item.ticker,
-              (trackedByTicker.get(item.ticker) ?? []).some((tracked) => tracked.url === article.url),
+              isTracked,
+              scanStartedAtMs,
+              isTracked,
             ))
             .filter((alert): alert is Alert => Boolean(alert)),
         };
@@ -272,23 +333,42 @@ router.post("/alerts/scan", async (req, res) => {
       [...sectorByName.entries()].map(async ([sector, config]) => {
         const data = await fetchNewsArticles(config.etf);
         return prioritizeTrackedArticles(config.etf, data?.articles ?? [])
-          .map((article) => buildAlert(
+          .map(({ isTracked, ...article }) => buildAlert(
             article,
             "sector",
             config.etf,
             sector,
-            (trackedByTicker.get(config.etf) ?? []).some((tracked) => tracked.url === article.url),
+            isTracked,
+            scanStartedAtMs,
+            isTracked,
           ))
           .filter((alert): alert is Alert => Boolean(alert));
       }),
     );
 
-    const alerts = [
+    const deduplicated = new Map<string, Alert>();
+    for (const alert of [
       ...stockResults.flatMap((result) => result.status === "fulfilled" ? result.value.alerts : []),
       ...sectorResults.flatMap((result) => result.status === "fulfilled" ? result.value : []),
-    ]
-      .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime())
-      .slice(0, 80);
+    ]) {
+      const normalizedTitle = alert.title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+      const key = `${alert.subjectType}:${alert.ticker}:${normalizedTitle || alert.url}`;
+      const existing = deduplicated.get(key);
+      if (!existing || alert.qualityScore > existing.qualityScore) {
+        deduplicated.set(key, alert);
+      }
+    }
+
+    const alerts = [...deduplicated.values()]
+      .sort((a, b) => (
+        b.qualityScore - a.qualityScore
+        || new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
+      ))
+      .slice(0, MAX_ALERTS_PER_SCAN)
+      .sort((a, b) => (
+        new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
+        || b.qualityScore - a.qualityScore
+      ));
 
     const sources = [...new Set(alerts.map((alert) => alert.source))];
     res.json({
@@ -296,7 +376,7 @@ router.post("/alerts/scan", async (req, res) => {
       scannedTickers: watchlist.length,
       scannedSectors: sectorByName.size,
       sources,
-      checkedAt: new Date().toISOString(),
+      checkedAt,
     });
   } catch (err) {
     req.log?.error({ err }, "Failed to scan market alerts");

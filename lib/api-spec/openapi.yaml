@@ -1492,6 +1492,10 @@ components:
         sentiment:
           type: string
           enum: ["positive", "negative", "neutral"]
+        qualityScore:
+          type: integer
+          minimum: 0
+          maximum: 100
         impactTitle:
           type: string
         impactSummary:
@@ -1507,6 +1511,7 @@ components:
         - summary
         - publishedAt
         - sentiment
+        - qualityScore
         - impactTitle
         - impactSummary
 

@@ -530,6 +530,9 @@ export const ScanMarketAlertsBody = zod.object({
     .optional(),
 });
 
+export const scanMarketAlertsResponseAlertsItemQualityScoreMin = 0;
+export const scanMarketAlertsResponseAlertsItemQualityScoreMax = 100;
+
 export const ScanMarketAlertsResponse = zod.object({
   alerts: zod.array(
     zod.object({
@@ -543,6 +546,10 @@ export const ScanMarketAlertsResponse = zod.object({
       summary: zod.string(),
       publishedAt: zod.string(),
       sentiment: zod.enum(["positive", "negative", "neutral"]),
+      qualityScore: zod
+        .number()
+        .min(scanMarketAlertsResponseAlertsItemQualityScoreMin)
+        .max(scanMarketAlertsResponseAlertsItemQualityScoreMax),
       impactTitle: zod.string(),
       impactSummary: zod.string(),
     }),

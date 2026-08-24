@@ -519,6 +519,11 @@ export interface MarketAlert {
   summary: string;
   publishedAt: string;
   sentiment: MarketAlertSentiment;
+  /**
+   * @minimum 0
+   * @maximum 100
+   */
+  qualityScore: number;
   impactTitle: string;
   impactSummary: string;
 }
