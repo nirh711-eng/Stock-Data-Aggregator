@@ -20,6 +20,24 @@ import {
 import { SECTOR_ETF_BY_NAME } from "@/lib/marketSectors";
 
 type AddArticleInput = Omit<TrackedArticle, "id" | "ticker" | "addedAt">;
+type ArticleDraft = {
+  url: string;
+  title: string;
+  summary: string;
+  source: string;
+  metadataUrl: string;
+  publishedAt?: string;
+  articleType?: TrackedArticle["articleType"];
+};
+
+const EMPTY_ARTICLE_DRAFT: ArticleDraft = {
+  url: "",
+  title: "",
+  summary: "",
+  source: "",
+  metadataUrl: "",
+};
+
 const ARTICLE_TYPE_LABELS: Record<NonNullable<TrackedArticle["articleType"]>, string> = {
   earnings: "דוחות ותוצאות",
   legal: "משפטי",
@@ -51,11 +69,7 @@ export function WatchlistManager({
   const [ticker, setTicker] = useState("");
   const [tickerError, setTickerError] = useState("");
   const [addingTicker, setAddingTicker] = useState(false);
-  const [articleDrafts, setArticleDrafts] = useState<Record<string, {
-    url: string;
-    title: string;
-    summary: string;
-  }>>({});
+  const [articleDrafts, setArticleDrafts] = useState<Record<string, ArticleDraft>>({});
   const [articleError, setArticleError] = useState("");
   const [metadataTicker, setMetadataTicker] = useState<string | null>(null);
   const { mutate: fetchArticleMetadata } = useFetchArticleMetadata();
@@ -104,7 +118,7 @@ export function WatchlistManager({
 
   const handleAddArticle = (event: FormEvent, item: Pick<WatchlistItem, "ticker">) => {
     event.preventDefault();
-    const draft = articleDrafts[item.ticker] ?? { url: "", title: "", summary: "" };
+    const draft = articleDrafts[item.ticker] ?? EMPTY_ARTICLE_DRAFT;
     const url = draft.url.trim();
     const title = draft.title.trim();
     let parsedUrl: URL;
@@ -136,9 +150,88 @@ export function WatchlistManager({
       setArticleError(notice ?? "");
       setArticleDrafts((previous) => ({
         ...previous,
-        [item.ticker]: { url: "", title: "", summary: "" },
+        [item.ticker]: EMPTY_ARTICLE_DRAFT,
       }));
     };
+
+    const saveWithMetadata = (metadata?: {
+      title: string;
+      source: string;
+      publishedAt: string;
+      summary: string;
+      articleType: NonNullable<TrackedArticle["articleType"]>;
+    }) => {
+      saveArticle({
+        title: title || metadata?.title || "",
+        url,
+        source: draft.source || metadata?.source || parsedUrl.hostname.replace(/^www\./, ""),
+        publishedAt: draft.publishedAt || metadata?.publishedAt || new Date().toISOString(),
+        summary: draft.summary.trim() || metadata?.summary || "",
+        articleType: draft.articleType || metadata?.articleType || "other",
+      });
+    };
+
+    setArticleError("");
+    if (draft.metadataUrl === url && (draft.title.trim() || title)) {
+      saveWithMetadata();
+      return;
+    }
+
+    setMetadataTicker(item.ticker);
+    fetchArticleMetadata(
+      { data: { url } },
+      {
+        onSuccess: (metadata) => {
+          setMetadataTicker(null);
+          setArticleDrafts((previous) => {
+            const current = previous[item.ticker] ?? EMPTY_ARTICLE_DRAFT;
+            if (current.url.trim() !== url) return previous;
+            return {
+              ...previous,
+              [item.ticker]: {
+                ...current,
+                title: current.title.trim() || metadata.title,
+                summary: current.summary.trim() || metadata.summary,
+                source: metadata.source,
+                metadataUrl: url,
+                publishedAt: metadata.publishedAt,
+                articleType: metadata.articleType,
+              },
+            };
+          });
+          saveWithMetadata(metadata);
+        },
+        onError: () => {
+          setMetadataTicker(null);
+          if (title) {
+            saveArticle({
+              title,
+              url,
+              source: draft.source || parsedUrl.hostname.replace(/^www\./, ""),
+              publishedAt: draft.publishedAt || new Date().toISOString(),
+              summary: draft.summary.trim(),
+              articleType: draft.articleType || "other",
+            }, "לא הצלחנו לקרוא את הקישור, לכן נשמרו הפרטים שהזנת ידנית.");
+            return;
+          }
+          setArticleError("לא הצלחנו לקרוא את פרטי הכתבה. אפשר להזין כותרת ותקציר ידנית ולשמור.");
+        },
+      },
+    );
+  };
+
+  const handleArticleUrlBlur = (item: Pick<WatchlistItem, "ticker">) => {
+    const draft = articleDrafts[item.ticker] ?? EMPTY_ARTICLE_DRAFT;
+    const url = draft.url.trim();
+    if (!url || draft.metadataUrl === url) return;
+
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(url);
+    } catch {
+      return;
+    }
+    if (!["http:", "https:"].includes(parsedUrl.protocol)) return;
 
     setArticleError("");
     setMetadataTicker(item.ticker);
@@ -147,29 +240,26 @@ export function WatchlistManager({
       {
         onSuccess: (metadata) => {
           setMetadataTicker(null);
-          saveArticle({
-            title: title || metadata.title,
-            url,
-            source: metadata.source || parsedUrl.hostname.replace(/^www\./, ""),
-            publishedAt: metadata.publishedAt,
-            summary: draft.summary.trim() || metadata.summary,
-            articleType: metadata.articleType,
+          setArticleDrafts((previous) => {
+            const current = previous[item.ticker] ?? EMPTY_ARTICLE_DRAFT;
+            if (current.url.trim() !== url) return previous;
+            return {
+              ...previous,
+              [item.ticker]: {
+                ...current,
+                title: current.title.trim() || metadata.title,
+                summary: current.summary.trim() || metadata.summary,
+                source: metadata.source,
+                metadataUrl: url,
+                publishedAt: metadata.publishedAt,
+                articleType: metadata.articleType,
+              },
+            };
           });
         },
         onError: () => {
           setMetadataTicker(null);
-          if (title) {
-            saveArticle({
-              title,
-              url,
-              source: parsedUrl.hostname.replace(/^www\./, ""),
-              publishedAt: new Date().toISOString(),
-              summary: draft.summary.trim(),
-              articleType: "other",
-            }, "לא הצלחנו לקרוא את הקישור, לכן נשמרו הפרטים שהזנת ידנית.");
-            return;
-          }
-          setArticleError("לא הצלחנו לקרוא את פרטי הכתבה. אפשר להזין כותרת ותקציר ידנית ולשמור.");
+          setArticleError("לא הצלחנו לקרוא את פרטי הכתבה. אפשר להשלים כותרת ותקציר ידנית.");
         },
       },
     );
@@ -271,16 +361,27 @@ export function WatchlistManager({
                         setArticleDrafts((previous) => ({
                           ...previous,
                           [item.ticker]: {
+                            ...(previous[item.ticker] ?? EMPTY_ARTICLE_DRAFT),
                             url: event.target.value,
-                            title: previous[item.ticker]?.title ?? "",
-                            summary: previous[item.ticker]?.summary ?? "",
+                            metadataUrl: "",
+                            source: "",
+                            publishedAt: undefined,
+                            articleType: undefined,
                           },
                         }));
+                      }}
+                      onBlur={(event) => {
+                        if (
+                          event.relatedTarget instanceof HTMLButtonElement
+                          && event.relatedTarget.type === "submit"
+                        ) return;
+                        handleArticleUrlBlur(item);
                       }}
                       placeholder="הדבק URL של כתבה למעקב"
                       aria-label={`קישור לכתבה עבור ${item.ticker}`}
                       className="text-xs bg-background"
                       type="url"
+                      disabled={metadataTicker === item.ticker}
                     />
                     <div className="flex gap-2">
                       <Input
@@ -290,15 +391,15 @@ export function WatchlistManager({
                           setArticleDrafts((previous) => ({
                             ...previous,
                             [item.ticker]: {
-                              url: previous[item.ticker]?.url ?? "",
+                              ...(previous[item.ticker] ?? EMPTY_ARTICLE_DRAFT),
                               title: event.target.value,
-                              summary: previous[item.ticker]?.summary ?? "",
                             },
                           }));
                         }}
                         placeholder="כותרת (אופציונלי אם הקישור ציבורי)"
                         aria-label={`כותרת הכתבה עבור ${item.ticker}`}
                         className="text-xs bg-background"
+                        disabled={metadataTicker === item.ticker}
                       />
                       <Button
                         type="submit"
@@ -318,8 +419,7 @@ export function WatchlistManager({
                         setArticleDrafts((previous) => ({
                           ...previous,
                           [item.ticker]: {
-                            url: previous[item.ticker]?.url ?? "",
-                            title: previous[item.ticker]?.title ?? "",
+                            ...(previous[item.ticker] ?? EMPTY_ARTICLE_DRAFT),
                             summary: event.target.value,
                           },
                         }));
@@ -327,7 +427,14 @@ export function WatchlistManager({
                       placeholder="תקציר קצר (אופציונלי, משפר את הניתוח)"
                       aria-label={`תקציר הכתבה עבור ${item.ticker}`}
                       className="text-xs bg-background"
+                      disabled={metadataTicker === item.ticker}
                     />
+                    {articleDrafts[item.ticker]?.source
+                      && articleDrafts[item.ticker]?.metadataUrl === articleDrafts[item.ticker]?.url.trim() && (
+                       <p className="text-[11px] text-muted-foreground">
+                         מקור שזוהה: <span className="font-medium text-foreground">{articleDrafts[item.ticker].source}</span>
+                       </p>
+                    )}
                   </form>
 
                   {articles.length > 0 && (

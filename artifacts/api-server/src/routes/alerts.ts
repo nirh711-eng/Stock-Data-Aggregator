@@ -256,6 +256,19 @@ router.post("/alerts/article-metadata", async (req, res) => {
     res.status(400).json({ error: "Bad request", message: "A public article URL is required" });
     return;
   }
+  try {
+    const parsed = new URL(url);
+    if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password) {
+      res.status(400).json({
+        error: "Bad request",
+        message: "Only public http and https article URLs are supported",
+      });
+      return;
+    }
+  } catch {
+    res.status(400).json({ error: "Bad request", message: "A valid article URL is required" });
+    return;
+  }
 
   try {
     res.json(await fetchArticleMetadata(url));

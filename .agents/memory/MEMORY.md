@@ -5,3 +5,4 @@
 - [Bottleneck route](bottleneck-route.md) — /api/bottlenecks: AI market structure analysis, 6h cache, uses @workspace/integrations-openai-ai-server not raw openai.
 - [Safe article URL fetching](safe-article-url-fetching.md) — Metadata fetches pin a validated public DNS address per request and must recheck each redirect.
 - [Preference sync semantics](preference-sync-semantics.md) — local data merges once on sign-in; subsequent edits are atomic user-scoped operations.
+- [Workspace dependency links](workspace-dependency-links.md) — declared workspace packages can be absent from artifact node_modules, blocking builds independently of feature changes.
