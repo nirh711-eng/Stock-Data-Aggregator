@@ -1,4 +1,5 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useAuth } from "@clerk/react";
 
 export interface TrackedArticle {
   id: string;
@@ -15,15 +16,25 @@ export interface TrackedArticle {
 type TrackedArticlesByTicker = Record<string, TrackedArticle[]>;
 
 const TRACKED_ARTICLES_KEY = "stockpulse_tracked_market_articles";
+
+const TRACKED_ARTICLES_LEGACY_CLAIM_KEY = "stockpulse_tracked_market_articles_legacy_claimed";
 export const MAX_TRACKED_ARTICLES = 100;
 export const MAX_TRACKED_ARTICLES_PER_TICKER = 20;
+
+type RemotePreferences = {
+  trackedArticles?: unknown;
+};
+
+function trackedArticlesKeyForUser(userId: string) {
+  return `${TRACKED_ARTICLES_KEY}:${userId}`;
+}
 const ARTICLE_TYPES = new Set<NonNullable<TrackedArticle["articleType"]>>([
   "earnings", "legal", "merger", "product", "leadership", "regulation", "analyst", "market", "other",
 ]);
 
-function loadTrackedArticles(): TrackedArticlesByTicker {
+function loadTrackedArticles(storageKey = TRACKED_ARTICLES_KEY): TrackedArticlesByTicker {
   try {
-    const raw = localStorage.getItem(TRACKED_ARTICLES_KEY);
+    const raw = localStorage.getItem(storageKey);
     const parsed = raw ? JSON.parse(raw) : {};
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
 
@@ -74,7 +85,7 @@ function loadTrackedArticles(): TrackedArticlesByTicker {
     }
 
     if (JSON.stringify(parsed) !== JSON.stringify(normalized)) {
-      localStorage.setItem(TRACKED_ARTICLES_KEY, JSON.stringify(normalized));
+      localStorage.setItem(storageKey, JSON.stringify(normalized));
     }
     return normalized;
   } catch {
@@ -82,8 +93,8 @@ function loadTrackedArticles(): TrackedArticlesByTicker {
   }
 }
 
-function saveTrackedArticles(articles: TrackedArticlesByTicker) {
-  localStorage.setItem(TRACKED_ARTICLES_KEY, JSON.stringify(articles));
+function saveTrackedArticles(articles: TrackedArticlesByTicker, storageKey = TRACKED_ARTICLES_KEY) {
+  localStorage.setItem(storageKey, JSON.stringify(articles));
 }
 
 function normalizeTicker(ticker: string) {
@@ -96,6 +107,111 @@ function getArticleId(ticker: string, url: string) {
 
 export function useTrackedArticles() {
   const [trackedArticles, setTrackedArticles] = useState<TrackedArticlesByTicker>(loadTrackedArticles);
+  const trackedArticlesRef = useRef(trackedArticles);
+  const syncedUserIdRef = useRef<string | null>(null);
+  const { isLoaded, isSignedIn, userId } = useAuth();
+
+  useEffect(() => {
+    trackedArticlesRef.current = trackedArticles;
+  }, [trackedArticles]);
+
+  const applyRemoteArticles = useCallback((preferences: RemotePreferences, ownerId: string) => {
+    const remote = preferences.trackedArticles;
+    if (!remote || typeof remote !== "object" || Array.isArray(remote)) return;
+    const storageKey = trackedArticlesKeyForUser(ownerId);
+    localStorage.setItem(storageKey, JSON.stringify(remote));
+    const normalized = loadTrackedArticles(storageKey);
+    setTrackedArticles(normalized);
+  }, []);
+
+  const syncAccountArticles = useCallback(async () => {
+    if (!isLoaded || !isSignedIn || !userId || syncedUserIdRef.current === userId) return;
+    syncedUserIdRef.current = userId;
+    try {
+      const hasMigrated = localStorage.getItem(trackedArticlesMigrationKey(userId)) === "1";
+      const canClaimLegacyData = localStorage.getItem(TRACKED_ARTICLES_LEGACY_CLAIM_KEY) !== "1";
+      const response = !hasMigrated && canClaimLegacyData
+        ? await fetch("/api/preferences/merge", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ watchlist: [], trackedArticles: trackedArticlesRef.current }),
+        })
+        : await fetch("/api/preferences", { credentials: "include" });
+      if (!response.ok) throw new Error("Unable to merge tracked articles");
+      applyRemoteArticles(await response.json() as RemotePreferences, userId);
+      localStorage.setItem(trackedArticlesMigrationKey(userId), "1");
+      if (canClaimLegacyData) {
+        localStorage.setItem(TRACKED_ARTICLES_LEGACY_CLAIM_KEY, "1");
+        localStorage.removeItem(TRACKED_ARTICLES_KEY);
+      }
+    } catch {
+      syncedUserIdRef.current = null;
+    }
+  }, [applyRemoteArticles, isLoaded, isSignedIn, userId]);
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    syncedUserIdRef.current = null;
+    if (!isSignedIn || !userId) {
+      setTrackedArticles(loadTrackedArticles());
+      return;
+    }
+    setTrackedArticles(loadTrackedArticles(trackedArticlesKeyForUser(userId)));
+    void syncAccountArticles();
+  }, [isLoaded, isSignedIn, syncAccountArticles, userId]);
+
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || !userId) {
+      syncedUserIdRef.current = null;
+      return;
+    }
+    const refreshFromAccount = async () => {
+      try {
+        const response = await fetch("/api/preferences", { credentials: "include" });
+        if (!response.ok) return;
+        applyRemoteArticles(await response.json() as RemotePreferences, userId);
+      } catch {
+        // The local copy remains available until the next successful refresh.
+      }
+    };
+    window.addEventListener("focus", refreshFromAccount);
+    return () => window.removeEventListener("focus", refreshFromAccount);
+  }, [applyRemoteArticles, isLoaded, isSignedIn, userId]);
+
+  const saveArticleToAccount = useCallback(async (article: TrackedArticle) => {
+    if (!isSignedIn) return;
+    try {
+      const response = await fetch("/api/preferences/articles", {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(article),
+      });
+      if (!response.ok) throw new Error("Unable to save tracked article");
+      if (!userId) return;
+      applyRemoteArticles(await response.json() as RemotePreferences, userId);
+    } catch {
+      // The local copy remains available until the next successful refresh.
+    }
+  }, [applyRemoteArticles, isSignedIn, userId]);
+
+  const removeArticleFromAccount = useCallback(async (ticker: string, article: TrackedArticle) => {
+    if (!isSignedIn) return;
+    try {
+      const response = await fetch("/api/preferences/articles", {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ticker, id: article.id, url: article.url }),
+      });
+      if (!response.ok) throw new Error("Unable to remove tracked article");
+      if (!userId) return;
+      applyRemoteArticles(await response.json() as RemotePreferences, userId);
+    } catch {
+      // The local copy remains available until the next successful refresh.
+    }
+  }, [applyRemoteArticles, isSignedIn, userId]);
 
   const addTrackedArticle = useCallback(
     (
@@ -124,38 +240,48 @@ export function useTrackedArticles() {
           Object.values(previous).flat().length >= MAX_TRACKED_ARTICLES
         ) return previous;
 
+        const trackedArticle: TrackedArticle = {
+          ...article,
+          id,
+          ticker: normalizedTicker,
+          url: normalizedUrl,
+          addedAt: new Date().toISOString(),
+        };
         const next = {
           ...previous,
           [normalizedTicker]: [
-            {
-              ...article,
-              id,
-              ticker: normalizedTicker,
-              url: normalizedUrl,
-              addedAt: new Date().toISOString(),
-            },
+            trackedArticle,
             ...existing,
           ],
         };
-        saveTrackedArticles(next);
+        saveTrackedArticles(
+          next,
+          isSignedIn && userId ? trackedArticlesKeyForUser(userId) : TRACKED_ARTICLES_KEY,
+        );
+        void saveArticleToAccount(trackedArticle);
         return next;
       });
       return true;
     },
-    [trackedArticles],
+    [isSignedIn, saveArticleToAccount, trackedArticles, userId],
   );
 
   const removeTrackedArticle = useCallback((ticker: string, id: string) => {
     const normalizedTicker = normalizeTicker(ticker);
     setTrackedArticles((previous) => {
+      const article = (previous[normalizedTicker] ?? []).find((item) => item.id === id);
       const remaining = (previous[normalizedTicker] ?? []).filter((article) => article.id !== id);
       const next = { ...previous };
       if (remaining.length > 0) next[normalizedTicker] = remaining;
       else delete next[normalizedTicker];
-      saveTrackedArticles(next);
+      saveTrackedArticles(
+        next,
+        isSignedIn && userId ? trackedArticlesKeyForUser(userId) : TRACKED_ARTICLES_KEY,
+      );
+      if (article) void removeArticleFromAccount(normalizedTicker, article);
       return next;
     });
-  }, []);
+  }, [isSignedIn, removeArticleFromAccount, userId]);
 
   const isArticleTracked = useCallback(
     (ticker: string, url: string) => {
@@ -173,4 +299,8 @@ export function useTrackedArticles() {
     removeTrackedArticle,
     isArticleTracked,
   };
+}
+
+function trackedArticlesMigrationKey(userId: string) {
+  return `${TRACKED_ARTICLES_KEY}:migrated:${userId}`;
 }

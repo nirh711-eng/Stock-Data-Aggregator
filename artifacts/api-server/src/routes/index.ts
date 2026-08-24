@@ -10,6 +10,7 @@ import bottlenecksRouter from "./bottlenecks";
 import socialRouter from "./social";
 import bondsRouter from "./bonds";
 import alertsRouter from "./alerts";
+import preferencesRouter from "./preferences";
 
 const router: IRouter = Router();
 
@@ -24,5 +25,6 @@ router.use(marketReportRouter);
 router.use(socialRouter);
 router.use(bondsRouter);
 router.use(alertsRouter);
+router.use(preferencesRouter);
 
 export default router;

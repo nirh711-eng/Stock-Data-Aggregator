@@ -101,7 +101,10 @@ const ChartTooltip = RechartsPrimitive.Tooltip
 
 const ChartTooltipContent = React.forwardRef<
   HTMLDivElement,
-  React.ComponentProps<typeof RechartsPrimitive.Tooltip> &
+  RechartsPrimitive.TooltipProps<
+    string | number | Array<string | number>,
+    string | number
+  > &
     React.ComponentProps<"div"> & {
       hideLabel?: boolean
       hideIndicator?: boolean

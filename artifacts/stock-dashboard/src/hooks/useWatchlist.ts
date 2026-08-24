@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useAuth } from "@clerk/react";
 
 export interface WatchlistItem {
   ticker: string;
@@ -24,12 +25,29 @@ export interface WatchlistAlert {
 
 const WATCHLIST_KEY = "stockpulse_watchlist";
 const ALERTS_KEY = "stockpulse_alerts";
+const WATCHLIST_LEGACY_CLAIM_KEY = "stockpulse_watchlist_legacy_claimed";
 const POLL_INTERVAL_MS = 5 * 60 * 1000;
 const MAX_WATCHLIST_ITEMS = 20;
 
-function loadWatchlist(): WatchlistItem[] {
+type RemotePreferences = {
+  watchlist?: unknown;
+  trackedArticles?: unknown;
+  updatedAt?: string;
+};
+
+type SyncStatus = "local" | "syncing" | "synced" | "offline";
+
+function watchlistKeyForUser(userId: string) {
+  return `${WATCHLIST_KEY}:${userId}`;
+}
+
+function watchlistMigrationKey(userId: string) {
+  return `${WATCHLIST_KEY}:migrated:${userId}`;
+}
+
+function loadWatchlist(storageKey = WATCHLIST_KEY): WatchlistItem[] {
   try {
-    const raw = localStorage.getItem(WATCHLIST_KEY);
+    const raw = localStorage.getItem(storageKey);
     const parsed = raw ? JSON.parse(raw) : [];
     if (!Array.isArray(parsed)) return [];
 
@@ -48,7 +66,7 @@ function loadWatchlist(): WatchlistItem[] {
     }).slice(0, MAX_WATCHLIST_ITEMS);
 
     if (JSON.stringify(parsed) !== JSON.stringify(normalized)) {
-      localStorage.setItem(WATCHLIST_KEY, JSON.stringify(normalized));
+      localStorage.setItem(storageKey, JSON.stringify(normalized));
     }
     return normalized;
   } catch {
@@ -56,8 +74,8 @@ function loadWatchlist(): WatchlistItem[] {
   }
 }
 
-function saveWatchlist(items: WatchlistItem[]) {
-  localStorage.setItem(WATCHLIST_KEY, JSON.stringify(items));
+function saveWatchlist(items: WatchlistItem[], storageKey = WATCHLIST_KEY) {
+  localStorage.setItem(storageKey, JSON.stringify(items));
 }
 
 function loadAlerts(): WatchlistAlert[] {
@@ -78,33 +96,177 @@ export function useWatchlist() {
   const [watchlist, setWatchlistState] = useState<WatchlistItem[]>(loadWatchlist);
   const [alerts, setAlertsState] = useState<WatchlistAlert[]>(loadAlerts);
   const [isChecking, setIsChecking] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("local");
   const lastCheckRef = useRef<number>(0);
+  const watchlistRef = useRef(watchlist);
+  const syncedUserIdRef = useRef<string | null>(null);
+  const { isLoaded, isSignedIn, userId } = useAuth();
 
   const unreadCount = alerts.filter((a) => !a.seenAt).length;
 
+  useEffect(() => {
+    watchlistRef.current = watchlist;
+  }, [watchlist]);
+
+  const applyRemoteWatchlist = useCallback((preferences: RemotePreferences, ownerId: string) => {
+    const next = Array.isArray(preferences.watchlist)
+      ? preferences.watchlist
+        .flatMap((item): WatchlistItem[] => {
+          const ticker = typeof (item as WatchlistItem)?.ticker === "string"
+            ? (item as WatchlistItem).ticker.trim().toUpperCase()
+            : "";
+          if (!/^[A-Z]{1,6}$/.test(ticker)) return [];
+          return [{
+            ticker,
+            addedAt: typeof (item as WatchlistItem).addedAt === "string"
+              ? (item as WatchlistItem).addedAt
+              : new Date().toISOString(),
+            lastKnownReportDate: typeof (item as WatchlistItem).lastKnownReportDate === "string"
+              ? (item as WatchlistItem).lastKnownReportDate
+              : null,
+            companyName: typeof (item as WatchlistItem).companyName === "string"
+              ? (item as WatchlistItem).companyName
+              : null,
+            sector: typeof (item as WatchlistItem).sector === "string"
+              ? (item as WatchlistItem).sector
+              : null,
+          }];
+        })
+        .slice(0, MAX_WATCHLIST_ITEMS)
+      : [];
+    setWatchlistState(next);
+    saveWatchlist(next, watchlistKeyForUser(ownerId));
+  }, []);
+
+  const syncAccountWatchlist = useCallback(async () => {
+    if (!isLoaded || !isSignedIn || !userId || syncedUserIdRef.current === userId) return;
+    syncedUserIdRef.current = userId;
+    setSyncStatus("syncing");
+    try {
+      const hasMigrated = localStorage.getItem(watchlistMigrationKey(userId)) === "1";
+      const canClaimLegacyData = localStorage.getItem(WATCHLIST_LEGACY_CLAIM_KEY) !== "1";
+      const response = !hasMigrated && canClaimLegacyData
+        ? await fetch("/api/preferences/merge", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ watchlist: watchlistRef.current, trackedArticles: {} }),
+        })
+        : await fetch("/api/preferences", { credentials: "include" });
+      if (!response.ok) throw new Error("Unable to merge watchlist");
+      applyRemoteWatchlist(await response.json() as RemotePreferences, userId);
+      localStorage.setItem(watchlistMigrationKey(userId), "1");
+      if (canClaimLegacyData) {
+        localStorage.setItem(WATCHLIST_LEGACY_CLAIM_KEY, "1");
+        localStorage.removeItem(WATCHLIST_KEY);
+      }
+      setSyncStatus("synced");
+    } catch {
+      syncedUserIdRef.current = null;
+      setSyncStatus("offline");
+    }
+  }, [applyRemoteWatchlist, isLoaded, isSignedIn, userId]);
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    syncedUserIdRef.current = null;
+    if (!isSignedIn || !userId) {
+      setWatchlistState(loadWatchlist());
+      return;
+    }
+    setWatchlistState(loadWatchlist(watchlistKeyForUser(userId)));
+    void syncAccountWatchlist();
+  }, [isLoaded, isSignedIn, syncAccountWatchlist, userId]);
+
+  useEffect(() => {
+    if (!isLoaded || !isSignedIn || !userId) {
+      syncedUserIdRef.current = null;
+      setSyncStatus("local");
+      return;
+    }
+    const refreshFromAccount = async () => {
+      try {
+        const response = await fetch("/api/preferences", { credentials: "include" });
+        if (!response.ok) return;
+        applyRemoteWatchlist(await response.json() as RemotePreferences, userId);
+        setSyncStatus("synced");
+      } catch {
+        setSyncStatus("offline");
+      }
+    };
+    window.addEventListener("focus", refreshFromAccount);
+    return () => window.removeEventListener("focus", refreshFromAccount);
+  }, [applyRemoteWatchlist, isLoaded, isSignedIn, userId]);
+
+  const saveWatchlistItemToAccount = useCallback(async (item: WatchlistItem) => {
+    if (!isSignedIn) return;
+    try {
+      const response = await fetch(`/api/preferences/watchlist/${encodeURIComponent(item.ticker)}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(item),
+      });
+      if (!response.ok) throw new Error("Unable to save watchlist item");
+      if (!userId) return;
+      applyRemoteWatchlist(await response.json() as RemotePreferences, userId);
+      setSyncStatus("synced");
+    } catch {
+      setSyncStatus("offline");
+    }
+  }, [applyRemoteWatchlist, isSignedIn, userId]);
+
+  const removeWatchlistItemFromAccount = useCallback(async (ticker: string) => {
+    if (!isSignedIn) return;
+    try {
+      const response = await fetch(`/api/preferences/watchlist/${encodeURIComponent(ticker)}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
+      if (!response.ok) throw new Error("Unable to remove watchlist item");
+      if (!userId) return;
+      applyRemoteWatchlist(await response.json() as RemotePreferences, userId);
+      setSyncStatus("synced");
+    } catch {
+      setSyncStatus("offline");
+    }
+  }, [applyRemoteWatchlist, isSignedIn, userId]);
+
   const addToWatchlist = useCallback(
     (ticker: string, lastKnownReportDate: string | null = null, companyName: string | null = null, sector: string | null = null) => {
+      const normalizedTicker = ticker.trim().toUpperCase();
+      if (!/^[A-Z]{1,6}$/.test(normalizedTicker)) return;
       setWatchlistState((prev) => {
-        if (prev.find((w) => w.ticker === ticker)) return prev;
+        if (prev.find((w) => w.ticker === normalizedTicker)) return prev;
         if (prev.length >= MAX_WATCHLIST_ITEMS) return prev;
+        const item = {
+          ticker: normalizedTicker,
+          addedAt: new Date().toISOString(),
+          lastKnownReportDate,
+          companyName,
+          sector,
+        };
         const next = [
           ...prev,
-          { ticker, addedAt: new Date().toISOString(), lastKnownReportDate, companyName, sector },
+          item,
         ];
-        saveWatchlist(next);
+        saveWatchlist(next, isSignedIn && userId ? watchlistKeyForUser(userId) : WATCHLIST_KEY);
+        void saveWatchlistItemToAccount(item);
         return next;
       });
     },
-    []
+    [isSignedIn, saveWatchlistItemToAccount, userId]
   );
 
   const removeFromWatchlist = useCallback((ticker: string) => {
+    const normalizedTicker = ticker.trim().toUpperCase();
     setWatchlistState((prev) => {
-      const next = prev.filter((w) => w.ticker !== ticker);
-      saveWatchlist(next);
+      const next = prev.filter((w) => w.ticker !== normalizedTicker);
+      saveWatchlist(next, isSignedIn && userId ? watchlistKeyForUser(userId) : WATCHLIST_KEY);
+      void removeWatchlistItemFromAccount(normalizedTicker);
       return next;
     });
-  }, []);
+  }, [isSignedIn, removeWatchlistItemFromAccount, userId]);
 
   const isWatched = useCallback(
     (ticker: string) => watchlist.some((w) => w.ticker === ticker),
@@ -113,17 +275,20 @@ export function useWatchlist() {
 
   const updateLastKnownDate = useCallback(
     (ticker: string, date: string | null) => {
+      const normalizedTicker = ticker.trim().toUpperCase();
       setWatchlistState((prev) => {
-        const current = prev.find((w) => w.ticker === ticker);
+        const current = prev.find((w) => w.ticker === normalizedTicker);
         if (!current || current.lastKnownReportDate === date) return prev;
         const next = prev.map((w) =>
-          w.ticker === ticker ? { ...w, lastKnownReportDate: date } : w
+          w.ticker === normalizedTicker ? { ...w, lastKnownReportDate: date } : w
         );
-        saveWatchlist(next);
+        saveWatchlist(next, isSignedIn && userId ? watchlistKeyForUser(userId) : WATCHLIST_KEY);
+        const updated = next.find((item) => item.ticker === normalizedTicker);
+        if (updated) void saveWatchlistItemToAccount(updated);
         return next;
       });
     },
-    []
+    [isSignedIn, saveWatchlistItemToAccount, userId]
   );
 
   const markAllRead = useCallback(() => {
@@ -243,6 +408,7 @@ export function useWatchlist() {
     alerts,
     unreadCount,
     isChecking,
+    syncStatus,
     addToWatchlist,
     removeFromWatchlist,
     isWatched,

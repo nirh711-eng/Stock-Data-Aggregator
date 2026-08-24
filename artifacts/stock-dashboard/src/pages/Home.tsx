@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, TrendingUp, TrendingDown, Clock, Building2, Calendar, FileText, Activity, Star, RefreshCw, AlertTriangle, BarChart2, ArrowUpDown, Layers, Globe, Zap, MessageSquare, Landmark, Bell } from "lucide-react";
+import { Search, TrendingUp, TrendingDown, Clock, Building2, Calendar, FileText, Activity, Star, RefreshCw, AlertTriangle, BarChart2, ArrowUpDown, Layers, Globe, Zap, MessageSquare, Landmark, Bell, Cloud, LogOut } from "lucide-react";
+import { useClerk, useUser } from "@clerk/react";
 import { 
   useGetStockData, 
   useGetStockSummary, 
@@ -65,6 +66,8 @@ export default function Home() {
   const [activeTicker, setActiveTicker] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"search" | "sectors" | "market" | "bottlenecks" | "social" | "bonds" | "alerts">("search");
   const queryClient = useQueryClient();
+  const { signOut } = useClerk();
+  const { user } = useUser();
 
   const {
     watchlist,
@@ -78,6 +81,7 @@ export default function Home() {
     markAllRead,
     clearAlerts,
     requestNotificationPermission,
+    syncStatus,
   } = useWatchlist();
 
   const { data: stockData, isLoading: isLoadingData, isFetching: isFetchingData } = useGetStockData(activeTicker || "", {
@@ -177,6 +181,14 @@ export default function Home() {
               StockPulse
             </h1>
             <p className="text-sm text-muted-foreground mt-1">מודיעין שוק מקצועי</p>
+            <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Cloud className={`h-3.5 w-3.5 ${syncStatus === "offline" ? "text-amber-600" : "text-primary"}`} />
+              {syncStatus === "syncing"
+                ? "ממזגים את הנתונים המקומיים עם החשבון…"
+                : syncStatus === "offline"
+                  ? "הנתונים נשמרו במכשיר וייסתנכרנו כשתתחבר שוב"
+                  : "רשימת המעקב והמקורות שלך מסונכרנים לחשבון"}
+            </p>
           </div>
           
           <div className="flex items-center gap-3 w-full md:w-auto">
@@ -200,6 +212,17 @@ export default function Home() {
               onClearAlerts={clearAlerts}
               onTickerClick={selectTicker}
             />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void signOut({ redirectUrl: import.meta.env.BASE_URL })}
+              title={`התנתק${user?.firstName ? ` (${user.firstName})` : ""}`}
+              className="shrink-0"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              <span className="hidden lg:inline">התנתקות</span>
+            </Button>
           </div>
         </header>
 
