@@ -129,6 +129,65 @@ export const GetStockHistoryResponse = zod.object({
 });
 
 /**
+ * Returns valuation and cash-flow metrics, period returns, and the latest completed trading week with daily and weekly OHLCV candles
+ * @summary Get stock fundamentals, returns, and completed weekly candles
+ */
+export const GetStockAnalyticsParams = zod.object({
+  ticker: zod.coerce.string(),
+});
+
+export const GetStockAnalyticsResponse = zod.object({
+  ticker: zod.string(),
+  fetchedAt: zod.string(),
+  fundamentals: zod.object({
+    shortFloat: zod
+      .number()
+      .nullable()
+      .describe("Short interest as a fraction of float"),
+    operatingCashFlow: zod.number().nullable(),
+    freeCashFlow: zod.number().nullable(),
+    trailingPE: zod.number().nullable(),
+    forwardPE: zod.number().nullable(),
+    fiftyTwoWeekHigh: zod.number().nullable(),
+    fiftyTwoWeekLow: zod.number().nullable(),
+  }),
+  returns: zod.object({
+    day: zod.number().nullable(),
+    week: zod.number().nullable(),
+    month: zod.number().nullable(),
+    ytd: zod.number().nullable(),
+    year: zod.number().nullable(),
+  }),
+  latestCompletedWeek: zod
+    .object({
+      weekStart: zod.string(),
+      weekEnd: zod.string(),
+      dailyCandles: zod.array(
+        zod.object({
+          date: zod.string(),
+          open: zod.number().optional(),
+          high: zod.number().optional(),
+          low: zod.number().optional(),
+          close: zod.number(),
+          volume: zod.number(),
+        }),
+      ),
+      weeklyCandle: zod.object({
+        date: zod.string(),
+        open: zod.number().optional(),
+        high: zod.number().optional(),
+        low: zod.number().optional(),
+        close: zod.number(),
+        volume: zod.number(),
+      }),
+      averageDailyVolume: zod.number().nullish(),
+      totalVolume: zod.number().nullish(),
+      candlePattern: zod.string(),
+    })
+    .nullable(),
+});
+
+/**
  * Given a list of watched tickers and their last known report dates, returns alerts for any new reports published or upcoming earnings within 7 days
  * @summary Check watchlist for new earnings reports or upcoming events
  */

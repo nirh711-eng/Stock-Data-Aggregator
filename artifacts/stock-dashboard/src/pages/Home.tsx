@@ -6,6 +6,7 @@ import {
   useGetStockSummary, 
   getGetStockDataQueryKey, 
   getGetStockSummaryQueryKey,
+  getGetStockAnalyticsQueryKey,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
@@ -20,6 +21,7 @@ import { CompanyProfile } from "@/components/CompanyProfile";
 import { SectorExplorer } from "@/components/SectorExplorer";
 import { NotificationCenter } from "@/components/NotificationCenter";
 import { TradingViewChart } from "@/components/TradingViewChart";
+import { StockAnalyticsPanel } from "@/components/StockAnalytics";
 import { MarketReport } from "@/components/MarketReport";
 import { BottleneckExplorer } from "@/components/BottleneckExplorer";
 import { SocialPulse } from "@/components/SocialPulse";
@@ -122,6 +124,7 @@ export default function Home() {
     if (!activeTicker) return;
     queryClient.invalidateQueries({ queryKey: getGetStockDataQueryKey(activeTicker) });
     queryClient.invalidateQueries({ queryKey: getGetStockSummaryQueryKey(activeTicker) });
+    queryClient.invalidateQueries({ queryKey: getGetStockAnalyticsQueryKey(activeTicker) });
   };
 
   const handleWatchlistToggle = async () => {
@@ -584,6 +587,8 @@ export default function Home() {
               </div>
               <TradingViewChart ticker={activeTicker} height={650} />
             </div>
+
+            <StockAnalyticsPanel ticker={activeTicker} />
 
             {/* Key Metrics Strip — Row 1 */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

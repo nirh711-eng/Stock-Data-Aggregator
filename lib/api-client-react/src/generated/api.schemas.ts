@@ -110,6 +110,43 @@ export interface StockHistory {
   data: PricePoint[];
 }
 
+export interface StockFundamentals {
+  /** Short interest as a fraction of float */
+  shortFloat: number | null;
+  operatingCashFlow: number | null;
+  freeCashFlow: number | null;
+  trailingPE: number | null;
+  forwardPE: number | null;
+  fiftyTwoWeekHigh: number | null;
+  fiftyTwoWeekLow: number | null;
+}
+
+export interface StockReturns {
+  day: number | null;
+  week: number | null;
+  month: number | null;
+  ytd: number | null;
+  year: number | null;
+}
+
+export interface CompletedWeek {
+  weekStart: string;
+  weekEnd: string;
+  dailyCandles: PricePoint[];
+  weeklyCandle: PricePoint;
+  averageDailyVolume?: number | null;
+  totalVolume?: number | null;
+  candlePattern: string;
+}
+
+export interface StockAnalytics {
+  ticker: string;
+  fetchedAt: string;
+  fundamentals: StockFundamentals;
+  returns: StockReturns;
+  latestCompletedWeek: CompletedWeek | null;
+}
+
 export interface AnalysisSystemUnderstanding {
   valueChain: string;
   valueCreation: string;

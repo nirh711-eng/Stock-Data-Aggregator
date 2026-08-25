@@ -8,6 +8,7 @@ import {
   GetStockHistoryParams,
   GetStockHistoryQueryParams,
 } from "@workspace/api-zod";
+import { isoWeekStart, latestCompletedWeekStart } from "../lib/stock-week-completion.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const YahooFinance = yahooFinanceMod as any;
@@ -16,13 +17,70 @@ const router = Router();
 
 const STOCK_CACHE_TTL_MS = 5 * 60 * 1000;
 const _stockCache = new Map<string, { data: unknown; ts: number }>();
-function getStockCache(key: string): unknown | null {
+function getStockCache(key: string, ttlMs = STOCK_CACHE_TTL_MS): unknown | null {
   const entry = _stockCache.get(key);
   if (!entry) return null;
-  if (Date.now() - entry.ts > STOCK_CACHE_TTL_MS) { _stockCache.delete(key); return null; }
+  if (Date.now() - entry.ts > ttlMs) { _stockCache.delete(key); return null; }
   return entry.data;
 }
 function setStockCache(key: string, data: unknown) { _stockCache.set(key, { data, ts: Date.now() }); }
+
+const ANALYTICS_CACHE_TTL_MS = 15 * 60 * 1000;
+
+function asNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (value && typeof value === "object" && "raw" in value) {
+    const raw = (value as { raw?: unknown }).raw;
+    return typeof raw === "number" && Number.isFinite(raw) ? raw : null;
+  }
+  return null;
+}
+
+type NormalizedCandle = {
+  date: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+};
+
+function toDateKey(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
+
+function exchangeLocalDateKey(value: Date, exchangeTimezone: unknown): string {
+  if (typeof exchangeTimezone !== "string" || !exchangeTimezone) return toDateKey(value);
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: exchangeTimezone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).formatToParts(value);
+    const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value;
+    const year = part("year");
+    const month = part("month");
+    const day = part("day");
+    return year && month && day ? `${year}-${month}-${day}` : toDateKey(value);
+  } catch {
+    return toDateKey(value);
+  }
+}
+
+function percentChange(current: number | null, base: number | null): number | null {
+  if (current == null || base == null || base === 0) return null;
+  return ((current / base) - 1) * 100;
+}
+
+function candlePattern(open: number, high: number, low: number, close: number): string {
+  const range = high - low;
+  if (range <= 0) return "ללא שינוי";
+  const bodyRatio = Math.abs(close - open) / range;
+  if (bodyRatio <= 0.1) return "דוג׳י — חוסר הכרעה";
+  if (close > open) return bodyRatio >= 0.65 ? "נר חיובי חזק" : "נר חיובי";
+  return bodyRatio >= 0.65 ? "נר שלילי חזק" : "נר שלילי";
+}
 
 function formatMarketCap(value: number): string {
   if (value >= 1e12) return `$${(value / 1e12).toFixed(2)}T`;
@@ -304,6 +362,185 @@ router.get("/stocks/:ticker/profile", async (req, res) => {
   }
 });
 
+router.get("/stocks/:ticker/analytics", async (req, res) => {
+  const parse = GetStockDataParams.safeParse(req.params);
+  if (!parse.success) {
+    res.status(400).json({ error: "Bad request", message: "Invalid ticker" });
+    return;
+  }
+
+  const upperTicker = parse.data.ticker.toUpperCase();
+  const cacheKey = `analytics:${upperTicker}`;
+  const cached = getStockCache(cacheKey, ANALYTICS_CACHE_TTL_MS);
+  if (cached) {
+    res.json(cached);
+    return;
+  }
+
+  try {
+    const [quoteResult, summaryResult, historyResult] = await Promise.allSettled([
+      yahooFinance.quote(upperTicker),
+      yahooFinance.quoteSummary(upperTicker, {
+        modules: ["financialData", "defaultKeyStatistics"],
+      }),
+      yahooFinance.historical(upperTicker, {
+        period1: new Date(Date.now() - 400 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+        period2: new Date(),
+        interval: "1d",
+      }),
+    ]);
+
+    if (quoteResult.status === "rejected") {
+      res.status(404).json({ error: "Not found", message: `Ticker ${upperTicker} not found` });
+      return;
+    }
+
+    const quote = quoteResult.value;
+    const summary = summaryResult.status === "fulfilled" ? summaryResult.value : null;
+    const financialData = summary?.financialData;
+    const keyStatistics = summary?.defaultKeyStatistics;
+
+    const fundamentals = {
+      shortFloat: asNumber(keyStatistics?.shortPercentOfFloat),
+      operatingCashFlow: asNumber(financialData?.operatingCashflow),
+      freeCashFlow: asNumber(financialData?.freeCashflow),
+      trailingPE: asNumber(quote.trailingPE) ?? asNumber(keyStatistics?.trailingPE),
+      forwardPE: asNumber(financialData?.forwardPE) ?? asNumber(quote.forwardPE),
+      fiftyTwoWeekHigh: asNumber(quote.fiftyTwoWeekHigh),
+      fiftyTwoWeekLow: asNumber(quote.fiftyTwoWeekLow),
+    };
+
+    // Only complete OHLC rows participate in the weekly candle calculation.
+    const candles: NormalizedCandle[] = historyResult.status === "fulfilled"
+      ? historyResult.value.flatMap((item: {
+          date: Date | string;
+          open?: unknown;
+          high?: unknown;
+          low?: unknown;
+          close?: unknown;
+          volume?: unknown;
+        }) => {
+          const open = asNumber(item.open);
+          const high = asNumber(item.high);
+          const low = asNumber(item.low);
+          const close = asNumber(item.close);
+          if (open == null || high == null || low == null || close == null) return [];
+          const date = item.date instanceof Date
+            ? exchangeLocalDateKey(item.date, quote.exchangeTimezoneName)
+            : String(item.date).slice(0, 10);
+          return [{
+            date,
+            open,
+            high,
+            low,
+            close,
+            volume: asNumber(item.volume) ?? 0,
+          }];
+        })
+      : [];
+
+    const ordered = candles
+      .filter((candle) => !Number.isNaN(new Date(`${candle.date}T00:00:00.000Z`).getTime()))
+      .sort((a, b) => a.date.localeCompare(b.date));
+    const latest = ordered.at(-1) ?? null;
+    const validClose = ordered.filter((candle) => candle.close != null);
+    const closeAtOrBefore = (date: Date) => {
+      const target = toDateKey(date);
+      return validClose.filter((candle) => candle.date <= target).at(-1)?.close ?? null;
+    };
+
+    let dayReturn: number | null = null;
+    if (latest) {
+      const latestIndex = validClose.findIndex((candle) => candle.date === latest.date);
+      dayReturn = percentChange(latest.close, latestIndex > 0 ? validClose[latestIndex - 1].close : null);
+    }
+
+    const latestDate = latest ? new Date(`${latest.date}T00:00:00.000Z`) : new Date();
+    const monthAgo = new Date(latestDate);
+    monthAgo.setUTCMonth(monthAgo.getUTCMonth() - 1);
+    const yearAgo = new Date(latestDate);
+    yearAgo.setUTCFullYear(yearAgo.getUTCFullYear() - 1);
+    const weekAgo = new Date(latestDate);
+    weekAgo.setUTCDate(weekAgo.getUTCDate() - 7);
+    const yearStart = new Date(Date.UTC(latestDate.getUTCFullYear(), 0, 1));
+
+    const returns = {
+      day: dayReturn,
+      week: percentChange(latest?.close ?? null, closeAtOrBefore(weekAgo)),
+      month: percentChange(latest?.close ?? null, closeAtOrBefore(monthAgo)),
+      ytd: percentChange(latest?.close ?? null, closeAtOrBefore(yearStart)),
+      year: percentChange(latest?.close ?? null, closeAtOrBefore(yearAgo)),
+    };
+
+    const weeks = new Map<string, NormalizedCandle[]>();
+    for (const candle of ordered) {
+      const weekStart = isoWeekStart(candle.date);
+      const group = weeks.get(weekStart) ?? [];
+      group.push(candle);
+      weeks.set(weekStart, group);
+    }
+
+    // Yahoo daily bars are grouped by the instrument's exchange-local ISO week.
+    // This supports standard Monday–Friday equities while retaining every session
+    // returned for holiday-shortened weeks.
+    const today = exchangeLocalDateKey(new Date(), quote.exchangeTimezoneName);
+    const completedWeekStart = latestCompletedWeekStart(
+      weeks,
+      today,
+      String(quote.marketState ?? ""),
+    );
+    let latestCompletedWeek: {
+      weekStart: string;
+      weekEnd: string;
+      dailyCandles: NormalizedCandle[];
+      weeklyCandle: NormalizedCandle;
+      averageDailyVolume: number | null;
+      totalVolume: number | null;
+      candlePattern: string;
+    } | null = null;
+
+    if (completedWeekStart) {
+      const dailyCandles = (weeks.get(completedWeekStart) ?? []).sort((a, b) => a.date.localeCompare(b.date));
+      const first = dailyCandles[0];
+      const last = dailyCandles.at(-1);
+      if (first && last) {
+        const totalVolume = dailyCandles.reduce((sum, candle) => sum + candle.volume, 0);
+        const averageDailyVolume = totalVolume / dailyCandles.length;
+        const weeklyCandle = {
+          date: last.date,
+          open: first.open,
+          high: Math.max(...dailyCandles.map((candle) => candle.high)),
+          low: Math.min(...dailyCandles.map((candle) => candle.low)),
+          close: last.close,
+          volume: totalVolume,
+        };
+        latestCompletedWeek = {
+          weekStart: completedWeekStart,
+          weekEnd: last.date,
+          dailyCandles,
+          weeklyCandle,
+          averageDailyVolume,
+          totalVolume,
+          candlePattern: candlePattern(weeklyCandle.open, weeklyCandle.high, weeklyCandle.low, weeklyCandle.close),
+        };
+      }
+    }
+
+    const analytics = {
+      ticker: upperTicker,
+      fetchedAt: new Date().toISOString(),
+      fundamentals,
+      returns,
+      latestCompletedWeek,
+    };
+    setStockCache(cacheKey, analytics);
+    res.json(analytics);
+  } catch (err) {
+    req.log?.error({ err }, "Failed to fetch stock analytics");
+    res.status(500).json({ error: "Internal server error", message: "Failed to fetch stock analytics" });
+  }
+});
+
 router.get("/stocks/:ticker/history", async (req, res) => {
   const paramsParse = GetStockHistoryParams.safeParse(req.params);
   const queryParse = GetStockHistoryQueryParams.safeParse(req.query);
@@ -331,6 +568,7 @@ router.get("/stocks/:ticker/history", async (req, res) => {
   try {
     const historical = await yahooFinance.historical(upperTicker, {
       period1: config.period1,
+      period2: new Date(),
       interval: config.interval,
     });
 

@@ -27,6 +27,7 @@ import type {
   MarketAlertScanRequest,
   MarketAlertScanResponse,
   MarketDailyReport,
+  StockAnalytics,
   StockData,
   StockHistory,
   StockSummary,
@@ -400,6 +401,95 @@ export function useGetStockHistory<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetStockHistoryQueryOptions(ticker, params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns valuation and cash-flow metrics, period returns, and the latest completed trading week with daily and weekly OHLCV candles
+ * @summary Get stock fundamentals, returns, and completed weekly candles
+ */
+export const getGetStockAnalyticsUrl = (ticker: string) => {
+  return `/api/stocks/${ticker}/analytics`;
+};
+
+export const getStockAnalytics = async (
+  ticker: string,
+  options?: RequestInit,
+): Promise<StockAnalytics> => {
+  return customFetch<StockAnalytics>(getGetStockAnalyticsUrl(ticker), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetStockAnalyticsQueryKey = (ticker: string) => {
+  return [`/api/stocks/${ticker}/analytics`] as const;
+};
+
+export const getGetStockAnalyticsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getStockAnalytics>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  ticker: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getStockAnalytics>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetStockAnalyticsQueryKey(ticker);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getStockAnalytics>>
+  > = ({ signal }) => getStockAnalytics(ticker, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!ticker,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getStockAnalytics>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetStockAnalyticsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getStockAnalytics>>
+>;
+export type GetStockAnalyticsQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get stock fundamentals, returns, and completed weekly candles
+ */
+
+export function useGetStockAnalytics<
+  TData = Awaited<ReturnType<typeof getStockAnalytics>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  ticker: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getStockAnalytics>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetStockAnalyticsQueryOptions(ticker, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

@@ -120,6 +120,38 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /stocks/{ticker}/analytics:
+    get:
+      operationId: getStockAnalytics
+      tags: [stocks]
+      summary: Get stock fundamentals, returns, and completed weekly candles
+      description: Returns valuation and cash-flow metrics, period returns, and the latest completed trading week with daily and weekly OHLCV candles
+      parameters:
+        - name: ticker
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Stock analytics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StockAnalytics"
+        "404":
+          description: Stock not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /stocks/watchlist/check:
     post:
       operationId: checkWatchlist
@@ -491,6 +523,114 @@ components:
         - ticker
         - period
         - data
+
+    StockAnalytics:
+      type: object
+      properties:
+        ticker:
+          type: string
+        fetchedAt:
+          type: string
+        fundamentals:
+          $ref: "#/components/schemas/StockFundamentals"
+        returns:
+          $ref: "#/components/schemas/StockReturns"
+        latestCompletedWeek:
+          $ref: "#/components/schemas/CompletedWeek"
+          nullable: true
+      required:
+        - ticker
+        - fetchedAt
+        - fundamentals
+        - returns
+        - latestCompletedWeek
+
+    StockFundamentals:
+      type: object
+      properties:
+        shortFloat:
+          type: number
+          nullable: true
+          description: Short interest as a fraction of float
+        operatingCashFlow:
+          type: number
+          nullable: true
+        freeCashFlow:
+          type: number
+          nullable: true
+        trailingPE:
+          type: number
+          nullable: true
+        forwardPE:
+          type: number
+          nullable: true
+        fiftyTwoWeekHigh:
+          type: number
+          nullable: true
+        fiftyTwoWeekLow:
+          type: number
+          nullable: true
+      required:
+        - shortFloat
+        - operatingCashFlow
+        - freeCashFlow
+        - trailingPE
+        - forwardPE
+        - fiftyTwoWeekHigh
+        - fiftyTwoWeekLow
+
+    StockReturns:
+      type: object
+      properties:
+        day:
+          type: number
+          nullable: true
+        week:
+          type: number
+          nullable: true
+        month:
+          type: number
+          nullable: true
+        ytd:
+          type: number
+          nullable: true
+        year:
+          type: number
+          nullable: true
+      required:
+        - day
+        - week
+        - month
+        - ytd
+        - year
+
+    CompletedWeek:
+      type: object
+      properties:
+        weekStart:
+          type: string
+        weekEnd:
+          type: string
+        dailyCandles:
+          type: array
+          items:
+            $ref: "#/components/schemas/PricePoint"
+        weeklyCandle:
+          $ref: "#/components/schemas/PricePoint"
+        averageDailyVolume:
+          type: number
+          nullable: true
+        totalVolume:
+          type: number
+          nullable: true
+        candlePattern:
+          type: string
+      required:
+        - weekStart
+        - weekEnd
+        - dailyCandles
+        - weeklyCandle
+        - candlePattern
 
     PricePoint:
       type: object
