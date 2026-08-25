@@ -47,6 +47,25 @@ interface SectorData {
   sector: string;
   count: number;
   stocks: SectorStock[];
+  scannedCount: number;
+  successfulCount: number;
+  failedCount: number;
+  complete: boolean;
+  unavailableSymbols: Array<{
+    symbol: string;
+    reason: "quote" | "candles";
+    consecutiveFailures: number;
+    firstFailedAt: string;
+    lastFailedAt: string;
+  }>;
+  persistentUnavailableSymbols: Array<{
+    symbol: string;
+    reason: "quote" | "candles";
+    consecutiveFailures: number;
+    firstFailedAt: string;
+    lastFailedAt: string;
+  }>;
+  availabilityTrackingAvailable: boolean;
   cachedAt: string;
 }
 
@@ -259,6 +278,13 @@ export function SectorExplorer({ onSelectTicker }: Props) {
       ? isMarketDailyError
       : isSectorDailyError;
   const isSignalIncomplete = Boolean(signalData && !signalData.complete);
+  const hasSignalQuoteGaps = Boolean(signalData && signalData.quoteUnavailableCount > 0);
+  const hasPersistentSignalAvailabilityIssues = Boolean(
+    signalData?.persistentUnavailableSymbols?.length,
+  );
+  const isSignalAvailabilityTrackingUnavailable = Boolean(
+    signalData && !signalData.availabilityTrackingAvailable,
+  );
   const refetchSignal = filter === "hammer_weekly"
     ? refetchWeeklySignal
     : marketDailyRequested
@@ -478,14 +504,62 @@ export function SectorExplorer({ onSelectTicker }: Props) {
         </div>
       )}
 
+      {data && filter !== "hammer_daily" && filter !== "hammer_weekly" && (
+        <div className={`rounded-lg border px-3 py-2 text-xs ${
+          data.complete
+            ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+            : "border-amber-500/35 bg-amber-500/10 text-amber-300"
+        }`}>
+          <div>
+            כיסוי ציטוטים: {data.successfulCount} מתוך {data.scannedCount} סמלים זמינים
+            {data.complete
+              ? " — כיסוי מלא."
+              : ` (${data.failedCount} ללא נתונים). הספירה גלויה כדי להבחין בין רשימה מלאה לכיסוי חלקי.`}
+          </div>
+          {data.persistentUnavailableSymbols.length > 0 && (
+            <div className="mt-1 text-amber-200/80">
+              בדיקת תחזוקה — כשל מתמשך ב־{data.persistentUnavailableSymbols.length}:
+              {" "}
+              {data.persistentUnavailableSymbols.map((item) => `${item.symbol} (${item.reason === "quote" ? "ציטוט" : "נרות"}, ${item.consecutiveFailures} ריצות)`).join(", ")}
+            </div>
+          )}
+          {!data.availabilityTrackingAvailable && (
+            <div className="mt-1 text-amber-200/80">
+              בדיקת תחזוקה זמנית אינה זמינה; הכיסוי הנוכחי מוצג, אך כשל מתמשך לא יתועד עד שהחיבור יחזור.
+            </div>
+          )}
+        </div>
+      )}
+
       {isSignalError && (filter === "hammer_daily" || filter === "hammer_weekly") && (
         <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
           הסריקה נכשלה — נסה שוב בעוד רגע.
         </div>
       )}
-      {isSignalIncomplete && (filter === "hammer_daily" || filter === "hammer_weekly") && (
+      {(isSignalIncomplete || hasSignalQuoteGaps) && (filter === "hammer_daily" || filter === "hammer_weekly") && (
         <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
-          כיסוי חלקי: {signalData?.successfulCount ?? 0} מתוך {signalData?.scannedCount ?? 0} מניות עובדו; {signalData?.failedCount ?? 0} לא היו זמינות אצל ספק הנתונים. ההתאמות המוצגות מבוססות על המניות שעובדו בהצלחה.
+          {isSignalIncomplete
+            ? <>כיסוי נרות חלקי: {signalData?.successfulCount ?? 0} מתוך {signalData?.scannedCount ?? 0} מניות עובדו; {signalData?.failedCount ?? 0} לא החזירו נר תקין.</>
+            : <>כיסוי נרות מלא: {signalData?.successfulCount ?? 0} מתוך {signalData?.scannedCount ?? 0} מניות עובדו.</>}
+          {hasSignalQuoteGaps && (
+            <span> נתוני ציטוט לא היו זמינים עבור {signalData?.quoteUnavailableCount ?? 0} מניות; אותות נר תקינים עדיין מוצגים, אך פרטי המחיר שלהן עשויים להיות חסרים.</span>
+          )}
+        </div>
+      )}
+      {hasPersistentSignalAvailabilityIssues && (filter === "hammer_daily" || filter === "hammer_weekly") && (
+        <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+          {signalData?.persistentUnavailableSymbols?.length ? (
+            <div className="mt-1 text-amber-200/80">
+              בדיקת תחזוקה — כשל מתמשך ב־{signalData.persistentUnavailableSymbols.length}:
+              {" "}
+              {signalData.persistentUnavailableSymbols.map((item) => `${item.symbol} (${item.reason === "quote" ? "ציטוט" : "נרות"}, ${item.consecutiveFailures} ריצות)`).join(", ")}
+            </div>
+          ) : null}
+        </div>
+      )}
+      {isSignalAvailabilityTrackingUnavailable && (filter === "hammer_daily" || filter === "hammer_weekly") && (
+        <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+          בדיקת תחזוקה זמנית אינה זמינה; הכיסוי הנוכחי מוצג, אך כשל מתמשך לא יתועד עד שהחיבור יחזור.
         </div>
       )}
 

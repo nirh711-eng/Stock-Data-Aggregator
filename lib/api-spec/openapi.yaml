@@ -1778,6 +1778,22 @@ components:
           type: integer
         complete:
           type: boolean
+        quoteUnavailableCount:
+          type: integer
+          description: Symbols whose quote enrichment was unavailable; daily candle scanning may still succeed for these symbols.
+        unavailableSymbols:
+          type: array
+          description: Symbols that failed during this scan, with their current consecutive failure streak.
+          items:
+            $ref: "#/components/schemas/UnavailableSymbol"
+        persistentUnavailableSymbols:
+          type: array
+          description: Symbols failing for at least three consecutive scans in this scan scope.
+          items:
+            $ref: "#/components/schemas/UnavailableSymbol"
+        availabilityTrackingAvailable:
+          type: boolean
+          description: Whether availability history was saved successfully for this scan.
         candleDate:
           type: ["string", "null"]
         cachedAt:
@@ -1791,8 +1807,36 @@ components:
         - successfulCount
         - failedCount
         - complete
+        - quoteUnavailableCount
+        - unavailableSymbols
+        - persistentUnavailableSymbols
+        - availabilityTrackingAvailable
         - candleDate
         - cachedAt
+
+    UnavailableSymbol:
+      type: object
+      properties:
+        symbol:
+          type: string
+        reason:
+          type: string
+          enum: [quote, candles]
+        consecutiveFailures:
+          type: integer
+          minimum: 1
+        firstFailedAt:
+          type: string
+          format: date-time
+        lastFailedAt:
+          type: string
+          format: date-time
+      required:
+        - symbol
+        - reason
+        - consecutiveFailures
+        - firstFailedAt
+        - lastFailedAt
 
     SectorSignalMatch:
       type: object

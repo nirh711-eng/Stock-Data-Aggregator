@@ -1,11 +1,14 @@
-import { Router } from "express";
+import { Router, type Request } from "express";
 import yahooFinanceMod from "yahoo-finance2";
 import {
   exchangeLocalDateKey,
   candleDateKey,
   isHammerCandle,
   selectPreviousCompletedCandle,
+  type AvailabilityReport,
+  type AvailabilityObservation,
 } from "../lib/candle-patterns.js";
+import { recordSectorAvailability } from "../lib/sector-availability.js";
 import {
   isoWeekStart,
   latestCompletedWeekStart,
@@ -19,6 +22,7 @@ const router = Router();
 
 // ── In-memory cache ───────────────────────────────────────────────────────────
 const _cache = new Map<string, { data: unknown; expires: number }>();
+
 function getCached<T>(key: string): T | null {
   const e = _cache.get(key);
   if (!e || Date.now() > e.expires) return null;
@@ -26,6 +30,26 @@ function getCached<T>(key: string): T | null {
 }
 function setCached(key: string, data: unknown, ttlMs = 30 * 60 * 1000) {
   _cache.set(key, { data, expires: Date.now() + ttlMs });
+}
+
+async function trackAvailability(
+  req: Request,
+  scope: string,
+  observations: AvailabilityObservation[],
+): Promise<AvailabilityReport & { trackingAvailable: boolean }> {
+  try {
+    return {
+      ...(await recordSectorAvailability(scope, observations)),
+      trackingAvailable: true,
+    };
+  } catch (err) {
+    req.log?.warn({ err, scope }, "Failed to persist sector symbol availability");
+    return {
+      unavailableSymbols: [],
+      persistentUnavailableSymbols: [],
+      trackingAvailable: false,
+    };
+  }
 }
 
 // ── Formatting ────────────────────────────────────────────────────────────────
@@ -54,11 +78,11 @@ const SECTOR_TICKERS: Record<string, string[]> = {
     // Large cap leaders
     "AAPL","MSFT","NVDA","AVGO","ORCL","CRM","ADBE","AMD","QCOM","TXN",
     "IBM","AMAT","KLAC","LRCX","MU","NXPI","ON","MCHP","MPWR","FTNT",
-    "ANSS","CDNS","SNPS","NET","PANW","SNOW","PLTR","CRWD","DDOG","ZS",
-    "OKTA","MDB","HUBS","CFLT","TWLO","TTD","APP","BILL","ASAN","GTLB",
+    "ANET","CDNS","SNPS","NET","PANW","SNOW","PLTR","CRWD","DDOG","ZS",
+    "OKTA","MDB","HUBS","ESTC","TWLO","TTD","APP","BILL","ASAN","GTLB",
     // Mid cap ($1B–$10B)
-    "PCTY","JAMF","APPN","DOMO","BRZE","SQSP","DOCN","TOST","SMAR","MNDY",
-    "AIOT","RELY","AZEK","WEAV","NCNO","EVBG","BLKB","CODA","ACMR","FORM",
+    "PCTY","TENB","APPN","DOMO","BRZE","IOT","DOCN","TOST","VEEV","MNDY",
+    "AIOT","RELY","PATH","WEAV","NCNO","S","BLKB","CODA","ACMR","FORM",
     // Radar ($100M–$1B)
     "SMTC","COHU","ATEN","DIOD","VICR","KLIC","CCSI","LSCC","PLAB","CEVA",
     "SLAB","MKSI","AMSC","HIMX","SIMO","NTGR","PCYC","MFAC","IDCC","INSG",
@@ -90,13 +114,13 @@ const SECTOR_TICKERS: Record<string, string[]> = {
   "Energy": [
     // Large cap
     "XOM","CVX","COP","SLB","EOG","PSX","VLO","OXY","MPC","KMI",
-    "WMB","HAL","DVN","BKR","FANG","TRGP","EQT","APA","MRO","HES",
+    "WMB","HAL","DVN","BKR","FANG","TRGP","EQT","APA","CNX","OVV",
     // Mid cap
-    "SBOW","TALO","MARPS","VET","VAALCO","AROC","CIVI","MNRL","PTEN","RES",
-    "SGU","GEOC","SM","MGY","CHRD","MTDR","CTRA","PR","LNG","OKE",
+    "AR","TALO","MARPS","VET","EGY","AROC","NOG","VNOM","PTEN","RES",
+    "SGU","GPRK","SM","MGY","CHRD","MTDR","RRC","PR","LNG","OKE",
     // Radar
-    "REX","BORR","NINE","WTTR","KLXE","CXDO","AMPY","SWN","ESTE","ARIS",
-    "SND","NEXT","PHX","MMLP","RCON","USPH","NGAS","PTR","INDO","DINO",
+    "REX","BORR","NINE","WTTR","KLXE","CXDO","AMPY","CRK","HPK","ARIS",
+    "SND","NEXT","KRP","MMLP","RCON","USPH","NGAS","PBR","INDO","DINO",
   ],
   "Consumer Cyclical": [
     // Large cap
@@ -200,13 +224,15 @@ router.get("/sectors/screen", async (req, res) => {
   if (cached) { res.json(cached); return; }
 
   try {
-    const symbols = (SECTOR_TICKERS[sector] ?? []).slice(0, limit);
+    const symbols = [...new Set(SECTOR_TICKERS[sector] ?? [])].slice(0, limit);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let yqArr: any[] = [];
+    let quoteFetchSucceeded = false;
     try {
       const raw = await yahooFinance.quote(symbols, {}, { validateResult: false });
       yqArr = Array.isArray(raw) ? raw : [raw];
+      quoteFetchSucceeded = true;
     } catch { /* return empty on failure */ }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -274,7 +300,33 @@ router.get("/sectors/screen", async (req, res) => {
 
     stocks.sort((a, b) => ((b?.marketCap ?? 0) - (a?.marketCap ?? 0)));
 
-    const result = { sector, count: stocks.length, stocks, cachedAt: new Date().toISOString() };
+    const availabilityObservations: AvailabilityObservation[] = quoteFetchSucceeded
+      ? symbols.map((symbol) => ({ symbol, quoteAvailable: yqMap.has(symbol) }))
+      : [];
+    const availability = await trackAvailability(
+      req,
+      `screen:${sector}`,
+      availabilityObservations,
+    );
+    if (availability.persistentUnavailableSymbols.length > 0) {
+      req.log?.warn({
+        symbols: availability.persistentUnavailableSymbols,
+      }, "Persistent sector symbol availability failures detected");
+    }
+    const failedCount = symbols.length - stocks.length;
+    const result = {
+      sector,
+      count: stocks.length,
+      scannedCount: symbols.length,
+      successfulCount: stocks.length,
+      failedCount,
+      complete: failedCount === 0,
+      unavailableSymbols: availability.unavailableSymbols,
+      persistentUnavailableSymbols: availability.persistentUnavailableSymbols,
+      availabilityTrackingAvailable: availability.trackingAvailable,
+      stocks,
+      cachedAt: new Date().toISOString(),
+    };
     setCached(cacheKey, result);
     res.json(result);
   } catch (err) {
@@ -319,10 +371,13 @@ router.get("/sectors/signals", async (req, res) => {
     // First get quotes for basic data
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let yqArr: any[] = [];
+    const quoteObservedSymbols = new Set<string>();
     for (let i = 0; i < symbols.length; i += 60) {
       try {
-        const raw = await yahooFinance.quote(symbols.slice(i, i + 60), {}, { validateResult: false });
+        const quoteBatch = symbols.slice(i, i + 60);
+        const raw = await yahooFinance.quote(quoteBatch, {}, { validateResult: false });
         yqArr.push(...(Array.isArray(raw) ? raw : [raw]));
+        quoteBatch.forEach((symbol) => quoteObservedSymbols.add(symbol));
       } catch {
         // Keep scanning historical candles when a quote batch is unavailable.
       }
@@ -421,7 +476,28 @@ router.get("/sectors/signals", async (req, res) => {
       const candleDates = [...new Set(dailyResults
         .flatMap((result) => result.candle ? [candleDateKey(result.candle.date)] : []))]
         .sort();
+      const observations: AvailabilityObservation[] = dailyResults.map((result) => ({
+        symbol: result.sym,
+        quoteAvailable: quoteObservedSymbols.has(result.sym)
+          ? yqMap.has(result.sym)
+          : undefined,
+        candlesAvailable: !result.failed,
+      }));
+      const availability = await trackAvailability(
+        req,
+        `signals:${sector}:${signal}`,
+        observations,
+      );
+      if (availability.persistentUnavailableSymbols.length > 0) {
+        req.log?.warn({
+          symbols: availability.persistentUnavailableSymbols,
+        }, "Persistent sector symbol availability failures detected");
+      }
+      // Candle availability determines whether the hammer scan ran. Quote
+      // availability is reported separately because a valid candle can still
+      // produce a useful pattern match without quote enrichment.
       const failedCount = dailyResults.filter((result) => result.failed).length;
+      const quoteUnavailableCount = symbols.filter((symbol) => !yqMap.has(symbol)).length;
       const result = {
         sector,
         signal,
@@ -431,6 +507,10 @@ router.get("/sectors/signals", async (req, res) => {
         successfulCount: symbols.length - failedCount,
         failedCount,
         complete: failedCount === 0,
+        quoteUnavailableCount,
+        unavailableSymbols: availability.unavailableSymbols,
+        persistentUnavailableSymbols: availability.persistentUnavailableSymbols,
+        availabilityTrackingAvailable: availability.trackingAvailable,
         candleDate: candleDates.length === 1 ? candleDates[0] : candleDates.at(-1) ?? null,
         cachedAt: new Date().toISOString(),
       };
@@ -570,7 +650,32 @@ router.get("/sectors/signals", async (req, res) => {
         };
       });
 
-    const failedCount = results.filter((result) => result.failed).length;
+    const observations: AvailabilityObservation[] = results.map((result) => {
+      const quoteAvailable = quoteObservedSymbols.has(result.sym)
+        ? yqMap.has(result.sym)
+        : undefined;
+      return {
+        symbol: result.sym,
+        quoteAvailable,
+        // If the quote is unavailable, history was not requested for this
+        // symbol, so do not record a candle failure for the same run.
+        candlesAvailable: quoteAvailable === false ? undefined : !result.failed,
+      };
+    });
+    const availability = await trackAvailability(
+      req,
+      `signals:${sector}:${signal}`,
+      observations,
+    );
+    if (availability.persistentUnavailableSymbols.length > 0) {
+      req.log?.warn({
+        symbols: availability.persistentUnavailableSymbols,
+      }, "Persistent sector symbol availability failures detected");
+    }
+    const failedCount = results.filter((result) => (
+      result.failed || !yqMap.has(result.sym)
+    )).length;
+    const quoteUnavailableCount = symbols.filter((symbol) => !yqMap.has(symbol)).length;
     const weeklyDates = [...new Set(results.flatMap((result) => result.weekDate ? [result.weekDate] : []))].sort();
     const result = {
       sector,
@@ -581,6 +686,10 @@ router.get("/sectors/signals", async (req, res) => {
       successfulCount: symbols.length - failedCount,
       failedCount,
       complete: failedCount === 0,
+      quoteUnavailableCount,
+      unavailableSymbols: availability.unavailableSymbols,
+      persistentUnavailableSymbols: availability.persistentUnavailableSymbols,
+      availabilityTrackingAvailable: availability.trackingAvailable,
       candleDate: weeklyDates.length === 1 ? weeklyDates[0] : weeklyDates.at(-1) ?? null,
       cachedAt: new Date().toISOString(),
     };

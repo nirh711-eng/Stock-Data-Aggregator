@@ -5,6 +5,8 @@ import {
   exchangeLocalDateKey,
   isHammerCandle,
   selectPreviousCompletedCandle,
+  PERSISTENT_AVAILABILITY_FAILURE_THRESHOLD,
+  updateAvailabilityTracker,
 } from "./candle-patterns.ts";
 
 test("recognizes a hammer and rejects a doji or short lower shadow", () => {
@@ -42,4 +44,38 @@ test("formats exchange-local dates and provider date values consistently", () =>
     exchangeLocalDateKey(new Date("2026-08-25T02:00:00.000Z")),
     "2026-08-24",
   );
+});
+
+test("only promotes repeated availability failures to maintenance candidates", () => {
+  const tracker = new Map();
+  const symbol = "STALE";
+  const observation = [{ symbol, quoteAvailable: false, candlesAvailable: false }];
+
+  const first = updateAvailabilityTracker(tracker, observation, new Date("2026-08-25T10:00:00.000Z"));
+  assert.equal(first.unavailableSymbols.length, 2);
+  assert.equal(first.persistentUnavailableSymbols.length, 0);
+
+  updateAvailabilityTracker(tracker, observation, new Date("2026-08-25T11:00:00.000Z"));
+  const third = updateAvailabilityTracker(tracker, observation, new Date("2026-08-25T12:00:00.000Z"));
+  assert.equal(PERSISTENT_AVAILABILITY_FAILURE_THRESHOLD, 3);
+  assert.deepEqual(
+    third.persistentUnavailableSymbols.map(({ symbol, reason, consecutiveFailures }) => ({
+      symbol,
+      reason,
+      consecutiveFailures,
+    })),
+    [
+      { symbol, reason: "quote", consecutiveFailures: 3 },
+      { symbol, reason: "candles", consecutiveFailures: 3 },
+    ],
+  );
+
+  const recovered = updateAvailabilityTracker(
+    tracker,
+    [{ symbol, quoteAvailable: true, candlesAvailable: true }],
+    new Date("2026-08-25T13:00:00.000Z"),
+  );
+  assert.deepEqual(recovered.unavailableSymbols, []);
+  assert.deepEqual(recovered.persistentUnavailableSymbols, []);
+  assert.equal(tracker.size, 0);
 });

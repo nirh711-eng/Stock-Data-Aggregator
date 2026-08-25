@@ -648,6 +648,42 @@ export const GetSectorSignalsResponse = zod.object({
   successfulCount: zod.number(),
   failedCount: zod.number(),
   complete: zod.boolean(),
+  quoteUnavailableCount: zod
+    .number()
+    .describe(
+      "Symbols whose quote enrichment was unavailable; daily candle scanning may still succeed for these symbols.",
+    ),
+  unavailableSymbols: zod
+    .array(
+      zod.object({
+        symbol: zod.string(),
+        reason: zod.enum(["quote", "candles"]),
+        consecutiveFailures: zod.number().min(1),
+        firstFailedAt: zod.coerce.date(),
+        lastFailedAt: zod.coerce.date(),
+      }),
+    )
+    .describe(
+      "Symbols that failed during this scan, with their current consecutive failure streak.",
+    ),
+  persistentUnavailableSymbols: zod
+    .array(
+      zod.object({
+        symbol: zod.string(),
+        reason: zod.enum(["quote", "candles"]),
+        consecutiveFailures: zod.number().min(1),
+        firstFailedAt: zod.coerce.date(),
+        lastFailedAt: zod.coerce.date(),
+      }),
+    )
+    .describe(
+      "Symbols failing for at least three consecutive scans in this scan scope.",
+    ),
+  availabilityTrackingAvailable: zod
+    .boolean()
+    .describe(
+      "Whether availability history was saved successfully for this scan.",
+    ),
   candleDate: zod.string().nullable(),
   cachedAt: zod.string(),
 });

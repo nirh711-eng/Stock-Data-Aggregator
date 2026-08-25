@@ -664,6 +664,23 @@ export interface SectorSignalMatch {
   isHammerWeekly?: boolean;
 }
 
+export type UnavailableSymbolReason =
+  (typeof UnavailableSymbolReason)[keyof typeof UnavailableSymbolReason];
+
+export const UnavailableSymbolReason = {
+  quote: "quote",
+  candles: "candles",
+} as const;
+
+export interface UnavailableSymbol {
+  symbol: string;
+  reason: UnavailableSymbolReason;
+  /** @minimum 1 */
+  consecutiveFailures: number;
+  firstFailedAt: string;
+  lastFailedAt: string;
+}
+
 export interface SectorSignalResponse {
   sector: string;
   signal: SectorSignalResponseSignal;
@@ -673,6 +690,14 @@ export interface SectorSignalResponse {
   successfulCount: number;
   failedCount: number;
   complete: boolean;
+  /** Symbols whose quote enrichment was unavailable; daily candle scanning may still succeed for these symbols. */
+  quoteUnavailableCount: number;
+  /** Symbols that failed during this scan, with their current consecutive failure streak. */
+  unavailableSymbols: UnavailableSymbol[];
+  /** Symbols failing for at least three consecutive scans in this scan scope. */
+  persistentUnavailableSymbols: UnavailableSymbol[];
+  /** Whether availability history was saved successfully for this scan. */
+  availabilityTrackingAvailable: boolean;
   /** @nullable */
   candleDate: string | null;
   cachedAt: string;

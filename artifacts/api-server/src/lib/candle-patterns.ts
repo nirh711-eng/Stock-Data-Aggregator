@@ -6,6 +6,86 @@ export type OHLC = {
   close: number | null;
 };
 
+export const PERSISTENT_AVAILABILITY_FAILURE_THRESHOLD = 3;
+
+export type AvailabilityFailureReason = "quote" | "candles";
+
+export type AvailabilityObservation = {
+  symbol: string;
+  quoteAvailable?: boolean;
+  candlesAvailable?: boolean;
+};
+
+export type UnavailableSymbol = {
+  symbol: string;
+  reason: AvailabilityFailureReason;
+  consecutiveFailures: number;
+  firstFailedAt: string;
+  lastFailedAt: string;
+};
+
+export type AvailabilityReport = {
+  unavailableSymbols: UnavailableSymbol[];
+  persistentUnavailableSymbols: UnavailableSymbol[];
+};
+
+/**
+ * Tracks provider availability without changing the curated symbol lists.
+ * A successful observation clears only the matching failure type, so a
+ * temporary provider hiccup cannot cause a symbol to be removed.
+ */
+export function updateAvailabilityTracker(
+  tracker: Map<string, UnavailableSymbol>,
+  observations: readonly AvailabilityObservation[],
+  now = new Date(),
+): AvailabilityReport {
+  const observedFailures: UnavailableSymbol[] = [];
+  const observedKeys = new Set<string>();
+  const timestamp = now.toISOString();
+
+  for (const observation of observations) {
+    const checks: Array<[AvailabilityFailureReason, boolean | undefined]> = [
+      ["quote", observation.quoteAvailable],
+      ["candles", observation.candlesAvailable],
+    ];
+
+    for (const [reason, available] of checks) {
+      if (available === undefined) continue;
+      const key = `${reason}:${observation.symbol}`;
+      observedKeys.add(key);
+
+      if (available) {
+        tracker.delete(key);
+        continue;
+      }
+
+      const previous = tracker.get(key);
+      const current: UnavailableSymbol = {
+        symbol: observation.symbol,
+        reason,
+        consecutiveFailures: (previous?.consecutiveFailures ?? 0) + 1,
+        firstFailedAt: previous?.firstFailedAt ?? timestamp,
+        lastFailedAt: timestamp,
+      };
+      tracker.set(key, current);
+      observedFailures.push(current);
+    }
+  }
+
+  // The caller sends a complete observation set for the current scan. Do not
+  // age entries from a different scan scope, but keep their history available
+  // for the next run of this same scope.
+  const persistentUnavailableSymbols = [...tracker.entries()]
+    .filter(([key, value]) => observedKeys.has(key)
+      && value.consecutiveFailures >= PERSISTENT_AVAILABILITY_FAILURE_THRESHOLD)
+    .map(([, value]) => value);
+
+  return {
+    unavailableSymbols: observedFailures,
+    persistentUnavailableSymbols,
+  };
+}
+
 export function exchangeLocalDateKey(
   date: Date,
   timeZone = "America/New_York",
