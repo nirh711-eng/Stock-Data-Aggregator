@@ -19,6 +19,7 @@ import type {
 import type {
   ArticleMetadata,
   ArticleMetadataRequest,
+  CompanyProfile,
   DailyAnalysis,
   DeepAnalysis,
   ErrorResponse,
@@ -288,6 +289,94 @@ export function useGetStockSummary<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetStockSummaryQueryOptions(ticker, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns supplier-backed company profile data, a confidence-aware specialization summary, and extracted business agreements
+ * @summary Get company profile and specialization context
+ */
+export const getGetStockProfileUrl = (ticker: string) => {
+  return `/api/stocks/${ticker}/profile`;
+};
+
+export const getStockProfile = async (
+  ticker: string,
+  options?: RequestInit,
+): Promise<CompanyProfile> => {
+  return customFetch<CompanyProfile>(getGetStockProfileUrl(ticker), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetStockProfileQueryKey = (ticker: string) => {
+  return [`/api/stocks/${ticker}/profile`] as const;
+};
+
+export const getGetStockProfileQueryOptions = <
+  TData = Awaited<ReturnType<typeof getStockProfile>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  ticker: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getStockProfile>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetStockProfileQueryKey(ticker);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getStockProfile>>> = ({
+    signal,
+  }) => getStockProfile(ticker, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!ticker,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getStockProfile>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetStockProfileQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getStockProfile>>
+>;
+export type GetStockProfileQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get company profile and specialization context
+ */
+
+export function useGetStockProfile<
+  TData = Awaited<ReturnType<typeof getStockProfile>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  ticker: string,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getStockProfile>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetStockProfileQueryOptions(ticker, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

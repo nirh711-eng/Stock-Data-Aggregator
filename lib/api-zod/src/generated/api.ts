@@ -98,6 +98,43 @@ export const GetStockSummaryResponse = zod.object({
 });
 
 /**
+ * Returns supplier-backed company profile data, a confidence-aware specialization summary, and extracted business agreements
+ * @summary Get company profile and specialization context
+ */
+export const GetStockProfileParams = zod.object({
+  ticker: zod.coerce.string(),
+});
+
+export const GetStockProfileResponse = zod.object({
+  ticker: zod.string(),
+  companyName: zod.string(),
+  description: zod.string().nullable(),
+  sector: zod.string().nullable(),
+  industry: zod.string().nullable(),
+  website: zod.string().nullable(),
+  country: zod.string().nullable(),
+  employees: zod.number().nullable(),
+  agreements: zod.array(
+    zod.object({
+      type: zod.string(),
+      partner: zod.string().nullable(),
+      description: zod.string(),
+    }),
+  ),
+  specialization: zod.object({
+    status: zod.enum(["available", "insufficient_data", "unavailable"]),
+    primaryProduct: zod.string().nullable(),
+    offerings: zod.array(zod.string()),
+    customerMarkets: zod.array(zod.string()),
+    keywords: zod.array(zod.string()),
+    confidence: zod.enum(["high", "medium", "low", "unknown"]),
+    source: zod.string().nullable(),
+    generatedAt: zod.string().nullable(),
+  }),
+  generatedAt: zod.string(),
+});
+
+/**
  * Returns historical price data for charting
  * @summary Get stock price history
  */
@@ -661,6 +698,16 @@ export const ScanMarketAlertsResponse = zod.object({
         .max(scanMarketAlertsResponseAlertsItemQualityScoreMax),
       impactTitle: zod.string(),
       impactSummary: zod.string(),
+      companyImpact: zod.object({
+        label: zod.enum(["positive", "negative", "neutral", "unknown"]),
+        confidence: zod.enum(["high", "medium", "low", "unknown"]),
+        reason: zod.string(),
+      }),
+      sectorImpact: zod.object({
+        label: zod.enum(["positive", "negative", "neutral", "unknown"]),
+        confidence: zod.enum(["high", "medium", "low", "unknown"]),
+        reason: zod.string(),
+      }),
     }),
   ),
   scannedTickers: zod.number(),

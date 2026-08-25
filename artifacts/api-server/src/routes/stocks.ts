@@ -9,6 +9,13 @@ import {
   GetStockHistoryQueryParams,
 } from "@workspace/api-zod";
 import { isoWeekStart, latestCompletedWeekStart } from "../lib/stock-week-completion.js";
+import {
+  cacheCompanySpecialization,
+  getCompanyProfileDetails,
+  unknownSpecialization,
+  specializationFromValue,
+  type CompanySpecialization,
+} from "../lib/company-context.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const YahooFinance = yahooFinanceMod as any;
@@ -26,6 +33,7 @@ function getStockCache(key: string, ttlMs = STOCK_CACHE_TTL_MS): unknown | null 
 function setStockCache(key: string, data: unknown) { _stockCache.set(key, { data, ts: Date.now() }); }
 
 const ANALYTICS_CACHE_TTL_MS = 15 * 60 * 1000;
+const PROFILE_CACHE_TTL_MS = 30 * 60 * 1000;
 
 function asNumber(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -94,6 +102,22 @@ function formatCurrency(value: number | null | undefined): string | null {
   if (Math.abs(value) >= 1e9) return `$${(value / 1e9).toFixed(2)}B`;
   if (Math.abs(value) >= 1e6) return `$${(value / 1e6).toFixed(2)}M`;
   return `$${value.toFixed(2)}`;
+}
+
+function normalizeAgreements(value: unknown): Array<{ type: string; partner: string | null; description: string }> {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [];
+    const candidate = item as Record<string, unknown>;
+    const type = typeof candidate.type === "string" ? candidate.type.replace(/\s+/g, " ").trim().slice(0, 80) : "";
+    const description = typeof candidate.description === "string"
+      ? candidate.description.replace(/\s+/g, " ").trim().slice(0, 300)
+      : "";
+    const partner = typeof candidate.partner === "string"
+      ? candidate.partner.replace(/\s+/g, " ").trim().slice(0, 160) || null
+      : null;
+    return type && description ? [{ type, partner, description }] : [];
+  }).slice(0, 6);
 }
 
 router.get("/stocks/:ticker", async (req, res) => {
@@ -309,23 +333,28 @@ router.get("/stocks/:ticker/profile", async (req, res) => {
 
   const { ticker } = parse.data;
   const upperTicker = ticker.toUpperCase();
+  const profileCacheKey = `profile:${upperTicker}`;
+  const cachedProfile = getStockCache(profileCacheKey, PROFILE_CACHE_TTL_MS);
+  if (cachedProfile) {
+    res.json(cachedProfile);
+    return;
+  }
 
   try {
-    const qsResult = await yahooFinance.quoteSummary(upperTicker, {
-      modules: ["assetProfile"],
-    }).catch(() => null);
-
-    const profile = qsResult?.assetProfile ?? null;
-    const description: string | null = profile?.longBusinessSummary ?? null;
-    const sector: string | null = profile?.sector ?? null;
-    const industry: string | null = profile?.industry ?? null;
-    const website: string | null = profile?.website ?? null;
-    const companyName: string = profile?.longName ?? upperTicker;
-    const country: string | null = profile?.country ?? null;
-    const employees: number | null = profile?.fullTimeEmployees ?? null;
+    const profile = await getCompanyProfileDetails(upperTicker).catch(() => null);
+    const description = profile?.description ?? null;
+    const sector = profile?.sector ?? null;
+    const industry = profile?.industry ?? null;
+    const website = profile?.website ?? null;
+    const companyName = profile?.companyName ?? upperTicker;
+    const country = profile?.country ?? null;
+    const employees = profile?.employees ?? null;
 
     type Agreement = { type: string; partner: string | null; description: string };
     let agreements: Agreement[] = [];
+    let specialization: CompanySpecialization = unknownSpecialization(
+      description ? "insufficient_data" : "unavailable",
+    );
 
     if (description) {
       try {
@@ -335,9 +364,10 @@ router.get("/stocks/:ticker/profile", async (req, res) => {
           messages: [
             {
               role: "system",
-              content: `מתוך תיאור העסק שיסופק לך, חלץ 4-6 הסכמים עסקיים פעילים מרכזיים, שותפויות, חוזי הפצה, הסכמי טכנולוגיה, לקוחות מרכזיים, או ספקים אסטרטגיים.
-החזר אך ורק מערך JSON תקני (ללא markdown, ללא טקסט נוסף) בפורמט:
-[{"type":"שם הסוג בעברית","partner":"שם השותף/חברה או null","description":"תיאור קצר בעברית שורה אחת"}]
+              content: `מתוך תיאור העסק שיסופק לך, הפק גם פרופיל התמחות קצר וגם 4-6 הסכמים עסקיים פעילים מרכזיים, שותפויות, חוזי הפצה, הסכמי טכנולוגיה, לקוחות מרכזיים, או ספקים אסטרטגיים.
+השתמש רק במידע שמופיע בתיאור. אל תמציא מוצרים, לקוחות או שווקים.
+החזר אך ורק אובייקט JSON תקני (ללא markdown, ללא טקסט נוסף) בפורמט:
+{"specialization":{"primaryProduct":"מוצר או תחום מרכזי קצר","offerings":["עד 6 מוצרים או שירותים"],"customerMarkets":["עד 5 שווקי יעד או שימוש"],"keywords":["עד 8 מילות מפתח"],"confidence":"high|medium|low"},"agreements":[{"type":"שם הסוג בעברית","partner":"שם השותף/חברה או null","description":"תיאור קצר בעברית שורה אחת"}]}
 סוגים אפשריים: שותפות טכנולוגית, הסכם הפצה, הסכם ייצור, הסכם תוכן, לקוח אסטרטגי, ספק מרכזי, הסכם רישוי, אחר.
 אל תשתמש בגרשיים כפולים בתוך ערכי הטקסט.`,
             },
@@ -349,13 +379,36 @@ router.get("/stocks/:ticker/profile", async (req, res) => {
         });
         const content = response.choices[0]?.message?.content ?? "[]";
         const parsed = JSON.parse(jsonrepair(content));
-        if (Array.isArray(parsed)) agreements = parsed.slice(0, 6) as Agreement[];
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          const result = parsed as { agreements?: unknown; specialization?: unknown };
+          agreements = normalizeAgreements(result.agreements);
+          specialization = specializationFromValue(
+            result.specialization,
+            "Yahoo Finance company description, summarized by AI",
+            new Date().toISOString(),
+          );
+        }
       } catch {
         agreements = [];
       }
     }
 
-    res.json({ ticker: upperTicker, companyName, description, sector, industry, website, country, employees, agreements, generatedAt: new Date().toISOString() });
+    const profileData = {
+      ticker: upperTicker,
+      companyName,
+      description,
+      sector,
+      industry,
+      website,
+      country,
+      employees,
+      agreements,
+      specialization,
+      generatedAt: new Date().toISOString(),
+    };
+    cacheCompanySpecialization(upperTicker, specialization);
+    setStockCache(profileCacheKey, profileData);
+    res.json(profileData);
   } catch (err) {
     req.log?.error({ err }, "Failed to fetch company profile");
     res.status(500).json({ error: "Internal server error", message: "Failed to fetch company profile" });

@@ -87,6 +87,38 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /stocks/{ticker}/profile:
+    get:
+      operationId: getStockProfile
+      tags: [stocks]
+      summary: Get company profile and specialization context
+      description: Returns supplier-backed company profile data, a confidence-aware specialization summary, and extracted business agreements
+      parameters:
+        - name: ticker
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Company profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanyProfile"
+        "400":
+          description: Invalid ticker
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /stocks/{ticker}/history:
     get:
       operationId: getStockHistory
@@ -506,6 +538,113 @@ components:
       required:
         - ticker
         - summary
+        - generatedAt
+
+    CompanyAgreement:
+      type: object
+      properties:
+        type:
+          type: string
+        partner:
+          type: string
+          nullable: true
+        description:
+          type: string
+      required:
+        - type
+        - partner
+        - description
+
+    CompanySpecializationStatus:
+      type: string
+      enum: ["available", "insufficient_data", "unavailable"]
+
+    CompanySpecializationConfidence:
+      type: string
+      enum: ["high", "medium", "low", "unknown"]
+
+    CompanySpecialization:
+      type: object
+      properties:
+        status:
+          $ref: "#/components/schemas/CompanySpecializationStatus"
+        primaryProduct:
+          type: string
+          nullable: true
+        offerings:
+          type: array
+          items:
+            type: string
+        customerMarkets:
+          type: array
+          items:
+            type: string
+        keywords:
+          type: array
+          items:
+            type: string
+        confidence:
+          $ref: "#/components/schemas/CompanySpecializationConfidence"
+        source:
+          type: string
+          nullable: true
+        generatedAt:
+          type: string
+          nullable: true
+      required:
+        - status
+        - primaryProduct
+        - offerings
+        - customerMarkets
+        - keywords
+        - confidence
+        - source
+        - generatedAt
+
+    CompanyProfile:
+      type: object
+      properties:
+        ticker:
+          type: string
+        companyName:
+          type: string
+        description:
+          type: string
+          nullable: true
+        sector:
+          type: string
+          nullable: true
+        industry:
+          type: string
+          nullable: true
+        website:
+          type: string
+          nullable: true
+        country:
+          type: string
+          nullable: true
+        employees:
+          type: integer
+          nullable: true
+        agreements:
+          type: array
+          items:
+            $ref: "#/components/schemas/CompanyAgreement"
+        specialization:
+          $ref: "#/components/schemas/CompanySpecialization"
+        generatedAt:
+          type: string
+      required:
+        - ticker
+        - companyName
+        - description
+        - sector
+        - industry
+        - website
+        - country
+        - employees
+        - agreements
+        - specialization
         - generatedAt
 
     StockHistory:
@@ -1711,6 +1850,10 @@ components:
           type: string
         impactSummary:
           type: string
+        companyImpact:
+          $ref: "#/components/schemas/NewsImpact"
+        sectorImpact:
+          $ref: "#/components/schemas/NewsImpact"
       required:
         - id
         - subjectType
@@ -1726,6 +1869,30 @@ components:
         - qualityScore
         - impactTitle
         - impactSummary
+        - companyImpact
+        - sectorImpact
+
+    NewsImpactLabel:
+      type: string
+      enum: ["positive", "negative", "neutral", "unknown"]
+
+    NewsImpactConfidence:
+      type: string
+      enum: ["high", "medium", "low", "unknown"]
+
+    NewsImpact:
+      type: object
+      properties:
+        label:
+          $ref: "#/components/schemas/NewsImpactLabel"
+        confidence:
+          $ref: "#/components/schemas/NewsImpactConfidence"
+        reason:
+          type: string
+      required:
+        - label
+        - confidence
+        - reason
 
     ErrorResponse:
       type: object

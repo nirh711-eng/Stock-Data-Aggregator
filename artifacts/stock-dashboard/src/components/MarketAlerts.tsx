@@ -1,10 +1,18 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useScanMarketAlerts, type MarketAlert } from "@workspace/api-client-react";
+import { useScanMarketAlerts, type MarketAlert as BaseMarketAlert } from "@workspace/api-client-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { RefreshCw, ExternalLink, Activity, Zap, TrendingUp, TrendingDown, Clock, Bell, Info, Bookmark } from "lucide-react";
+import { RefreshCw, ExternalLink, Activity, Zap, TrendingUp, TrendingDown, Clock, Bell, Info, Bookmark, HelpCircle, Minus, Building2, Layers } from "lucide-react";
 import { WatchlistManager } from "@/components/WatchlistManager";
+
+// Cached alerts created before the dual-axis response existed can omit these
+// fields, even though fresh API responses always include them.
+type MarketImpact = BaseMarketAlert["companyImpact"];
+type MarketAlert = Omit<BaseMarketAlert, "companyImpact" | "sectorImpact"> & {
+  companyImpact?: MarketImpact;
+  sectorImpact?: MarketImpact;
+};
 import { useTrackedArticles } from "@/hooks/useTrackedArticles";
 import type { WatchlistItem } from "@/hooks/useWatchlist";
 import { SECTOR_ETF_BY_NAME } from "@/lib/marketSectors";
@@ -382,15 +390,111 @@ export function MarketAlerts({
                  </div>
                  
                  <div className="mt-5 pt-5 border-t border-border">
-                   <h4 className="text-sm font-bold flex items-center gap-2 mb-2 text-foreground">
-                     <Zap className={`w-4 h-4 ${
-                       alert.sentiment === 'positive' ? 'text-positive' : alert.sentiment === 'negative' ? 'text-destructive' : 'text-primary'
-                     }`} />
-                     {alert.impactTitle}
-                   </h4>
-                   <p className="text-sm text-foreground/80 leading-relaxed max-w-4xl">
-                     {alert.impactSummary}
-                   </p>
+                   {alert.companyImpact || alert.sectorImpact ? (
+                     <div className={`grid grid-cols-1 ${alert.companyImpact && alert.sectorImpact ? 'lg:grid-cols-2' : ''} gap-4`}>
+                       {/* Company Impact */}
+                       {alert.companyImpact && (
+                         <div className={`p-4 rounded-xl border transition-colors hover:shadow-sm ${
+                           alert.companyImpact.label === 'positive' ? 'bg-positive/5 border-positive/20 hover:border-positive/30' :
+                           alert.companyImpact.label === 'negative' ? 'bg-destructive/5 border-destructive/20 hover:border-destructive/30' :
+                           alert.companyImpact.label === 'neutral' ? 'bg-muted/50 border-border hover:border-border/80' :
+                           'bg-primary/5 border-primary/20 hover:border-primary/30'
+                         }`}>
+                           <div className="flex items-center justify-between mb-2.5">
+                             <h4 className="text-sm font-bold flex items-center gap-1.5 text-foreground">
+                               <Building2 className={`w-4 h-4 ${
+                                 alert.companyImpact.label === 'positive' ? 'text-positive' :
+                                 alert.companyImpact.label === 'negative' ? 'text-destructive' :
+                                 alert.companyImpact.label === 'neutral' ? 'text-muted-foreground' :
+                                 'text-primary'
+                               }`} />
+                               השפעה על החברה
+                             </h4>
+                             <div className="flex items-center gap-2">
+                               <Badge variant="outline" className="text-[10px] h-5 px-1.5 font-medium border-border/50 bg-background/50">
+                                 אמינות {
+                                   alert.companyImpact.confidence === 'high' ? 'גבוהה' :
+                                   alert.companyImpact.confidence === 'medium' ? 'בינונית' :
+                                   alert.companyImpact.confidence === 'low' ? 'נמוכה' : 'לא ידועה'
+                                 }
+                               </Badge>
+                               <div className={`w-6 h-6 rounded-md flex items-center justify-center bg-background border ${
+                                 alert.companyImpact.label === 'positive' ? 'border-positive/30 text-positive' :
+                                 alert.companyImpact.label === 'negative' ? 'border-destructive/30 text-destructive' :
+                                 alert.companyImpact.label === 'neutral' ? 'border-border text-muted-foreground' :
+                                 'border-primary/30 text-primary'
+                               }`}>
+                                 {alert.companyImpact.label === 'positive' ? <TrendingUp className="w-3.5 h-3.5" /> :
+                                  alert.companyImpact.label === 'negative' ? <TrendingDown className="w-3.5 h-3.5" /> :
+                                  alert.companyImpact.label === 'neutral' ? <Minus className="w-3.5 h-3.5" /> :
+                                  <HelpCircle className="w-3.5 h-3.5" />}
+                               </div>
+                             </div>
+                           </div>
+                           <p className="text-sm text-foreground/80 leading-relaxed">
+                             {alert.companyImpact.reason || 'אין מידע נוסף.'}
+                           </p>
+                         </div>
+                       )}
+
+                       {/* Sector Impact */}
+                       {alert.sectorImpact && (
+                         <div className={`p-4 rounded-xl border transition-colors hover:shadow-sm ${
+                           alert.sectorImpact.label === 'positive' ? 'bg-positive/5 border-positive/20 hover:border-positive/30' :
+                           alert.sectorImpact.label === 'negative' ? 'bg-destructive/5 border-destructive/20 hover:border-destructive/30' :
+                           alert.sectorImpact.label === 'neutral' ? 'bg-muted/50 border-border hover:border-border/80' :
+                           'bg-primary/5 border-primary/20 hover:border-primary/30'
+                         }`}>
+                           <div className="flex items-center justify-between mb-2.5">
+                             <h4 className="text-sm font-bold flex items-center gap-1.5 text-foreground">
+                               <Layers className={`w-4 h-4 ${
+                                 alert.sectorImpact.label === 'positive' ? 'text-positive' :
+                                 alert.sectorImpact.label === 'negative' ? 'text-destructive' :
+                                 alert.sectorImpact.label === 'neutral' ? 'text-muted-foreground' :
+                                 'text-primary'
+                               }`} />
+                               השפעה סקטוריאלית
+                             </h4>
+                             <div className="flex items-center gap-2">
+                               <Badge variant="outline" className="text-[10px] h-5 px-1.5 font-medium border-border/50 bg-background/50">
+                                 אמינות {
+                                   alert.sectorImpact.confidence === 'high' ? 'גבוהה' :
+                                   alert.sectorImpact.confidence === 'medium' ? 'בינונית' :
+                                   alert.sectorImpact.confidence === 'low' ? 'נמוכה' : 'לא ידועה'
+                                 }
+                               </Badge>
+                               <div className={`w-6 h-6 rounded-md flex items-center justify-center bg-background border ${
+                                 alert.sectorImpact.label === 'positive' ? 'border-positive/30 text-positive' :
+                                 alert.sectorImpact.label === 'negative' ? 'border-destructive/30 text-destructive' :
+                                 alert.sectorImpact.label === 'neutral' ? 'border-border text-muted-foreground' :
+                                 'border-primary/30 text-primary'
+                               }`}>
+                                 {alert.sectorImpact.label === 'positive' ? <TrendingUp className="w-3.5 h-3.5" /> :
+                                  alert.sectorImpact.label === 'negative' ? <TrendingDown className="w-3.5 h-3.5" /> :
+                                  alert.sectorImpact.label === 'neutral' ? <Minus className="w-3.5 h-3.5" /> :
+                                  <HelpCircle className="w-3.5 h-3.5" />}
+                               </div>
+                             </div>
+                           </div>
+                           <p className="text-sm text-foreground/80 leading-relaxed">
+                             {alert.sectorImpact.reason || 'אין מידע נוסף.'}
+                           </p>
+                         </div>
+                       )}
+                     </div>
+                   ) : (
+                     <div>
+                       <h4 className="text-sm font-bold flex items-center gap-2 mb-2 text-foreground">
+                         <Zap className={`w-4 h-4 ${
+                           alert.sentiment === 'positive' ? 'text-positive' : alert.sentiment === 'negative' ? 'text-destructive' : 'text-primary'
+                         }`} />
+                         {alert.impactTitle}
+                       </h4>
+                       <p className="text-sm text-foreground/80 leading-relaxed max-w-4xl">
+                         {alert.impactSummary}
+                       </p>
+                     </div>
+                   )}
                  </div>
               </div>
             </CardContent>

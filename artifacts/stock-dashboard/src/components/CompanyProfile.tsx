@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Building2, Globe, Users, ChevronDown, ChevronUp, Handshake, Loader2 } from "lucide-react";
+import { Building2, Globe, Users, ChevronDown, ChevronUp, Handshake, Loader2, Target, CheckCircle2, AlertCircle, HelpCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { getGetStockProfileQueryKey, useGetStockProfile } from "@workspace/api-client-react";
 
 interface StockData {
   description: string | null;
@@ -18,6 +18,17 @@ interface Agreement {
   description: string;
 }
 
+interface CompanySpecialization {
+  status: "available" | "insufficient_data" | "unavailable";
+  primaryProduct?: string | null;
+  offerings?: string[];
+  customerMarkets?: string[];
+  keywords?: string[];
+  confidence: "high" | "medium" | "low" | "unknown";
+  source?: string | null;
+  generatedAt?: string | null;
+}
+
 interface ProfileData {
   ticker: string;
   companyName: string;
@@ -29,6 +40,7 @@ interface ProfileData {
   employees: number | null;
   agreements: Agreement[];
   generatedAt: string;
+  specialization?: CompanySpecialization;
 }
 
 interface Props {
@@ -36,22 +48,16 @@ interface Props {
   stockData: StockData;
 }
 
-const BASE = import.meta.env.BASE_URL?.replace(/\/$/, "") ?? "";
-
-async function fetchProfile(ticker: string): Promise<ProfileData> {
-  const res = await fetch(`${BASE}/api/stocks/${ticker}/profile`);
-  if (!res.ok) throw new Error("Profile fetch failed");
-  return res.json() as Promise<ProfileData>;
-}
-
 export function CompanyProfile({ ticker, stockData }: Props) {
   const [expanded, setExpanded] = useState(false);
 
-  const { data, isLoading } = useQuery<ProfileData>({
-    queryKey: ["companyProfile", ticker],
-    queryFn: () => fetchProfile(ticker),
-    staleTime: 1000 * 60 * 30,
+  const { data: rawData, isLoading, isError } = useGetStockProfile(ticker, {
+    query: {
+      queryKey: getGetStockProfileQueryKey(ticker),
+      staleTime: 1000 * 60 * 30,
+    },
   });
+  const data = rawData as ProfileData | undefined;
 
   const description = stockData.description ?? data?.description ?? null;
   const sector = stockData.sector ?? data?.sector ?? null;
@@ -60,6 +66,7 @@ export function CompanyProfile({ ticker, stockData }: Props) {
   const country = data?.country ?? null;
   const employees = data?.employees ?? null;
   const agreements = data?.agreements ?? [];
+  const specialization = data?.specialization;
 
   const PREVIEW_LEN = 220;
   const shortDesc = description && description.length > PREVIEW_LEN
@@ -172,6 +179,119 @@ export function CompanyProfile({ ticker, stockData }: Props) {
             <p className="text-xs text-muted-foreground">לא נמצאו הסכמים פעילים.</p>
           ) : null}
         </div>
+
+        {/* Company Specialization */}
+        {isLoading ? (
+          <div className="pt-3 border-t border-border/50">
+            <div className="flex items-center gap-2 mb-3">
+              <Skeleton className="w-3.5 h-3.5 rounded-full" />
+              <Skeleton className="h-3.5 w-24" />
+            </div>
+            <div className="space-y-3">
+              <Skeleton className="h-14 w-full rounded-lg" />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <Skeleton className="h-20 w-full rounded-lg" />
+                <Skeleton className="h-20 w-full rounded-lg" />
+              </div>
+            </div>
+          </div>
+        ) : isError ? (
+          <div className="pt-2 border-t border-border/50">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 p-2.5 rounded-lg border border-border/50">
+              <AlertCircle className="w-4 h-4" />
+              <span>לא ניתן לטעון את ההתמחות כרגע. הנתונים הכלליים של החברה עדיין זמינים.</span>
+            </div>
+          </div>
+        ) : specialization && (
+          <div className="pt-2 border-t border-border/50">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Target className="w-3.5 h-3.5 text-primary" />
+                <span className="text-xs font-semibold text-foreground uppercase tracking-wider">התמחות עסקית</span>
+              </div>
+              {specialization.status === 'available' && (
+                <Badge variant="outline" className={`text-[10px] font-medium border-border/50 ${
+                  specialization.confidence === 'high' ? 'bg-positive/10 text-positive border-positive/20' :
+                  specialization.confidence === 'medium' ? 'bg-chart-4/10 text-chart-4 border-chart-4/20' :
+                  specialization.confidence === 'low' ? 'bg-destructive/10 text-destructive border-destructive/20' :
+                  'bg-muted text-muted-foreground'
+                }`}>
+                  אמינות {
+                    specialization.confidence === 'high' ? 'גבוהה' : 
+                    specialization.confidence === 'medium' ? 'בינונית' : 
+                    specialization.confidence === 'low' ? 'נמוכה' : 'לא ידועה'
+                  }
+                </Badge>
+              )}
+            </div>
+
+            {specialization.status === 'insufficient_data' ? (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 p-2.5 rounded-lg border border-border/50">
+                <HelpCircle className="w-4 h-4" />
+                <span>אין מספיק נתונים לקביעת התמחות ברורה.</span>
+              </div>
+            ) : specialization.status === 'unavailable' ? (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 p-2.5 rounded-lg border border-border/50">
+                <AlertCircle className="w-4 h-4" />
+                <span>ניתוח התמחות אינו זמין כרגע.</span>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {specialization.primaryProduct && (
+                  <div className="bg-primary/5 border border-primary/10 rounded-lg p-2.5">
+                    <span className="text-xs font-medium text-primary block mb-1">מוצר/שירות עיקרי</span>
+                    <p className="text-sm font-semibold text-foreground">{specialization.primaryProduct}</p>
+                  </div>
+                )}
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {specialization.offerings && specialization.offerings.length > 0 && (
+                    <div>
+                      <span className="text-xs font-medium text-muted-foreground block mb-1.5">היצע מרכזי</span>
+                      <ul className="space-y-1.5">
+                        {specialization.offerings.map((offering, idx) => (
+                          <li key={idx} className="flex items-start gap-1.5 text-xs text-foreground/80">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-positive shrink-0 mt-0.5" />
+                            <span>{offering}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {specialization.customerMarkets && specialization.customerMarkets.length > 0 && (
+                    <div>
+                      <span className="text-xs font-medium text-muted-foreground block mb-1.5">שווקי יעד</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {specialization.customerMarkets.map((market, idx) => (
+                          <Badge key={idx} variant="secondary" className="text-[10px] bg-secondary hover:bg-secondary/80 text-secondary-foreground transition-colors">
+                            {market}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {specialization.keywords && specialization.keywords.length > 0 && (
+                  <div className="pt-1">
+                    <div className="flex flex-wrap gap-1">
+                      {specialization.keywords.map((kw, idx) => (
+                        <span key={idx} className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded border border-border/50">
+                          #{kw}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {specialization.source && (
+                  <p className="text-[10px] text-muted-foreground/80 pt-1">
+                    מקור: תיאור החברה ב־Yahoo Finance, מסוכם באמצעות AI
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
 
       </CardContent>
     </Card>

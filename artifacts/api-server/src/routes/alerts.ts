@@ -1,5 +1,18 @@
 import { Router } from "express";
+import { openai } from "@workspace/integrations-openai-ai-server";
+import { jsonrepair } from "jsonrepair";
 import { fetchNewsArticles } from "../lib/enrichment";
+import {
+  getCompanyProfileDetails,
+  getCompanySpecialization,
+  unknownSpecialization,
+  type CompanySpecialization,
+} from "../lib/company-context";
+import {
+  defaultDualImpact,
+  normalizeImpact,
+  type AlertImpact,
+} from "../lib/alert-impact";
 import {
   classifyArticleType,
   fetchArticleMetadata,
@@ -49,6 +62,15 @@ type Alert = {
   qualityScore: number;
   impactTitle: string;
   impactSummary: string;
+  companyImpact: AlertImpact;
+  sectorImpact: AlertImpact;
+};
+
+type CompanyScanContext = {
+  ticker: string;
+  companyName: string;
+  sector: string | null;
+  specialization: CompanySpecialization;
 };
 
 const SECTOR_CONFIG: Array<{ name: string; etf: string }> = [
@@ -94,6 +116,7 @@ const NEGATIVE_TERMS = [
 ];
 const ALERT_WINDOW_MS = 24 * 60 * 60 * 1000;
 const MAX_ALERTS_PER_SCAN = 80;
+const IMPACT_CLASSIFICATION_BATCH_SIZE = 24;
 const HIGH_QUALITY_SOURCES = [
   "reuters", "associated press", "ap news", "bloomberg", "financial times",
   "wall street journal", "cnbc", "marketwatch", "yahoo finance", "sec.gov",
@@ -247,7 +270,132 @@ function buildAlert(
     articleType: article.articleType,
     qualityScore: getQualityScore(article, publishedAtMs, scanStartedAtMs, isTracked),
     ...impact,
+    ...defaultDualImpact(subjectType, sentiment),
   };
+}
+
+function parseImpactResponse(raw: string): unknown[] {
+  const candidates = [raw, raw.match(/\[[\s\S]*\]/)?.[0] ?? ""];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      const parsed = JSON.parse(candidate);
+      if (Array.isArray(parsed)) return parsed;
+      if (parsed && typeof parsed === "object" && Array.isArray((parsed as { impacts?: unknown }).impacts)) {
+        return (parsed as { impacts: unknown[] }).impacts;
+      }
+    } catch {
+      try {
+        const parsed = JSON.parse(jsonrepair(candidate));
+        if (Array.isArray(parsed)) return parsed;
+        if (parsed && typeof parsed === "object" && Array.isArray((parsed as { impacts?: unknown }).impacts)) {
+          return (parsed as { impacts: unknown[] }).impacts;
+        }
+      } catch {
+        // Try the next candidate.
+      }
+    }
+  }
+  return [];
+}
+
+async function getCompanyScanContext(item: {
+  ticker: string;
+  companyName: string | null;
+  sector: string | null;
+}): Promise<CompanyScanContext> {
+  try {
+    const profile = await getCompanyProfileDetails(item.ticker);
+    const specialization = await getCompanySpecialization({
+      ticker: item.ticker,
+      companyName: item.companyName ?? profile.companyName,
+      sector: item.sector ?? profile.sector,
+      industry: profile.industry,
+      description: profile.description,
+    });
+    return {
+      ticker: item.ticker,
+      companyName: item.companyName ?? profile.companyName,
+      sector: item.sector ?? normalizeSector(profile.sector),
+      specialization,
+    };
+  } catch {
+    return {
+      ticker: item.ticker,
+      companyName: item.companyName ?? item.ticker,
+      sector: item.sector,
+      specialization: unknownSpecialization("unavailable"),
+    };
+  }
+}
+
+async function classifyAlertImpacts(
+  alerts: Alert[],
+  contexts: Map<string, CompanyScanContext>,
+): Promise<Alert[]> {
+  const classified = new Map<string, Pick<Alert, "companyImpact" | "sectorImpact">>();
+
+  for (let offset = 0; offset < alerts.length; offset += IMPACT_CLASSIFICATION_BATCH_SIZE) {
+    const batch = alerts.slice(offset, offset + IMPACT_CLASSIFICATION_BATCH_SIZE);
+    const payload = batch.map((alert) => {
+      const context = alert.subjectType === "stock" ? contexts.get(alert.ticker) : null;
+      return {
+        id: alert.id,
+        articleType: alert.articleType,
+        subjectType: alert.subjectType,
+        title: alert.title.slice(0, 280),
+        summary: alert.summary.slice(0, 500),
+        company: context
+          ? {
+              name: context.companyName,
+              sector: context.sector,
+              specialization: context.specialization.status === "available"
+                ? {
+                    primaryProduct: context.specialization.primaryProduct,
+                    offerings: context.specialization.offerings,
+                    customerMarkets: context.specialization.customerMarkets,
+                    keywords: context.specialization.keywords,
+                  }
+                : null,
+            }
+          : null,
+        sector: alert.subjectType === "sector" ? alert.subject : context?.sector ?? null,
+      };
+    });
+
+    try {
+      const response = await openai.chat.completions.create({
+        model: "gpt-5-mini",
+        max_completion_tokens: 3600,
+        messages: [
+          {
+            role: "system",
+            content: `אתה מסווג השפעת חדשות עבור דשבורד פיננסי. החזר JSON בלבד: מערך אובייקטים לפי הסדר שבו התקבלו.
+לכל אובייקט החזר {"id":"...","companyImpact":{"label":"positive|negative|neutral|unknown","confidence":"high|medium|low|unknown","reason":"נימוק קצר בעברית"},"sectorImpact":{"label":"positive|negative|neutral|unknown","confidence":"high|medium|low|unknown","reason":"נימוק קצר בעברית"}}.
+השפעת חברה נמדדת מול המוצר, השירותים והשווקים של החברה הספציפית. השפעת סקטור נמדדת רק אם יש השלכה סבירה על חברות דומות או על הסקטור כולו.
+כתבה על חברה בודדת אינה השפעה סקטוריאלית אוטומטית. כתבת מאקרו או שוק כללית ללא קשר עסקי ישיר היא unknown או neutral. אל תנחש מידע שלא נמצא בכותרת, בתקציר או בהקשר שסופק. שמור כל נימוק עד משפט קצר אחד.`,
+          },
+          { role: "user", content: JSON.stringify(payload) },
+        ],
+      });
+      const results = parseImpactResponse(response.choices[0]?.message?.content ?? "");
+      for (const result of results) {
+        if (!result || typeof result !== "object" || Array.isArray(result)) continue;
+        const record = result as Record<string, unknown>;
+        const id = typeof record.id === "string" ? record.id : "";
+        const alert = batch.find((item) => item.id === id);
+        if (!alert) continue;
+        classified.set(id, {
+          companyImpact: normalizeImpact(record.companyImpact, alert.companyImpact),
+          sectorImpact: normalizeImpact(record.sectorImpact, alert.sectorImpact),
+        });
+      }
+    } catch {
+      // The default impacts explicitly communicate that this batch could not be classified.
+    }
+  }
+
+  return alerts.map((alert) => ({ ...alert, ...(classified.get(alert.id) ?? {}) }));
 }
 
 router.post("/alerts/article-metadata", async (req, res) => {
@@ -384,6 +532,17 @@ router.post("/alerts/scan", async (req, res) => {
   };
 
   try {
+    // Resolve a reusable business context per watched company, rather than doing
+    // an AI request for every article. The specialization helper is cached by ticker.
+    const companyContextResults = await Promise.allSettled(
+      watchlist.map((item) => getCompanyScanContext(item)),
+    );
+    const companyContexts = new Map(
+      companyContextResults.flatMap((result) => result.status === "fulfilled"
+        ? [[result.value.ticker, result.value] as const]
+        : []),
+    );
+
     const stockResults = await Promise.allSettled(
       watchlist.map(async (item) => {
         const data = await fetchNewsArticles(item.ticker);
@@ -444,12 +603,13 @@ router.post("/alerts/scan", async (req, res) => {
       }
     }
 
-    const alerts = [...deduplicated.values()]
+    const candidateAlerts = [...deduplicated.values()]
       .sort((a, b) => (
         b.qualityScore - a.qualityScore
         || new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
       ))
-      .slice(0, MAX_ALERTS_PER_SCAN)
+      .slice(0, MAX_ALERTS_PER_SCAN);
+    const alerts = (await classifyAlertImpacts(candidateAlerts, companyContexts))
       .sort((a, b) => (
         new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
         || b.qualityScore - a.qualityScore

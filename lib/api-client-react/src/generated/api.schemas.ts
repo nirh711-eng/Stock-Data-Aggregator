@@ -95,6 +95,56 @@ export interface StockSummary {
   generatedAt: string;
 }
 
+export interface CompanyAgreement {
+  type: string;
+  partner: string | null;
+  description: string;
+}
+
+export type CompanySpecializationStatus =
+  (typeof CompanySpecializationStatus)[keyof typeof CompanySpecializationStatus];
+
+export const CompanySpecializationStatus = {
+  available: "available",
+  insufficient_data: "insufficient_data",
+  unavailable: "unavailable",
+} as const;
+
+export type CompanySpecializationConfidence =
+  (typeof CompanySpecializationConfidence)[keyof typeof CompanySpecializationConfidence];
+
+export const CompanySpecializationConfidence = {
+  high: "high",
+  medium: "medium",
+  low: "low",
+  unknown: "unknown",
+} as const;
+
+export interface CompanySpecialization {
+  status: CompanySpecializationStatus;
+  primaryProduct: string | null;
+  offerings: string[];
+  customerMarkets: string[];
+  keywords: string[];
+  confidence: CompanySpecializationConfidence;
+  source: string | null;
+  generatedAt: string | null;
+}
+
+export interface CompanyProfile {
+  ticker: string;
+  companyName: string;
+  description: string | null;
+  sector: string | null;
+  industry: string | null;
+  website: string | null;
+  country: string | null;
+  employees: number | null;
+  agreements: CompanyAgreement[];
+  specialization: CompanySpecialization;
+  generatedAt: string;
+}
+
 export interface PricePoint {
   date: string;
   open?: number;
@@ -573,6 +623,32 @@ export const MarketAlertSentiment = {
   neutral: "neutral",
 } as const;
 
+export type NewsImpactLabel =
+  (typeof NewsImpactLabel)[keyof typeof NewsImpactLabel];
+
+export const NewsImpactLabel = {
+  positive: "positive",
+  negative: "negative",
+  neutral: "neutral",
+  unknown: "unknown",
+} as const;
+
+export type NewsImpactConfidence =
+  (typeof NewsImpactConfidence)[keyof typeof NewsImpactConfidence];
+
+export const NewsImpactConfidence = {
+  high: "high",
+  medium: "medium",
+  low: "low",
+  unknown: "unknown",
+} as const;
+
+export interface NewsImpact {
+  label: NewsImpactLabel;
+  confidence: NewsImpactConfidence;
+  reason: string;
+}
+
 export interface MarketAlert {
   id: string;
   subjectType: MarketAlertSubjectType;
@@ -592,6 +668,8 @@ export interface MarketAlert {
   qualityScore: number;
   impactTitle: string;
   impactSummary: string;
+  companyImpact: NewsImpact;
+  sectorImpact: NewsImpact;
 }
 
 export interface MarketAlertScanResponse {
