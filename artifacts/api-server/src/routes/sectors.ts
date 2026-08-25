@@ -1,5 +1,15 @@
 import { Router } from "express";
 import yahooFinanceMod from "yahoo-finance2";
+import {
+  exchangeLocalDateKey,
+  candleDateKey,
+  isHammerCandle,
+  selectPreviousCompletedCandle,
+} from "../lib/candle-patterns.js";
+import {
+  isoWeekStart,
+  latestCompletedWeekStart,
+} from "../lib/stock-week-completion.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const YahooFinance = yahooFinanceMod as any;
@@ -36,17 +46,6 @@ function capTier(mc: number): "leader" | "mid" | "radar" | "speculative" {
   if (mc >= 1e9)   return "mid";
   if (mc >= 100e6) return "radar";
   return "speculative";
-}
-
-// ── Hammer detection ──────────────────────────────────────────────────────────
-function isHammer(o: number, h: number, l: number, c: number): boolean {
-  if (h === l || o == null || h == null || l == null || c == null) return false;
-  const body  = Math.abs(c - o);
-  const range = h - l;
-  if (range === 0 || body / range < 0.03) return false; // avoid doji
-  const lower = Math.min(o, c) - l;
-  const upper = h - Math.max(o, c);
-  return lower >= 2.0 * body && upper <= 0.35 * body;
 }
 
 // ── Curated ticker lists — LARGE caps + RADAR/MID tier mixes ─────────────────
@@ -241,10 +240,6 @@ router.get("/sectors/screen", async (req, res) => {
         const relVolume   = (vol != null && avgVol && avgVol > 0) ? vol / avgVol : null;
 
         // Daily hammer from today's OHLC
-        const hammerDaily = (dayOpen != null && dayHigh != null && dayLow != null && price != null)
-          ? isHammer(dayOpen, dayHigh, dayLow, price)
-          : false;
-
         return {
           symbol:             sym,
           name:               q.longName ?? q.shortName ?? sym,
@@ -269,7 +264,9 @@ router.get("/sectors/screen", async (req, res) => {
           dayOpen,
           dayHigh,
           dayLow,
-          hammerDaily,
+          // Daily hammer results come from the explicit historical scanner below.
+          // The live quote is not a completed candle and must not be classified.
+          hammerDaily: false,
           qualityTier:        capTier(mc),
         };
       })
@@ -286,58 +283,240 @@ router.get("/sectors/screen", async (req, res) => {
   }
 });
 
-// ── Weekly hammer signal scan ─────────────────────────────────────────────────
+// ── Historical candle signal scans ─────────────────────────────────────────────
 router.get("/sectors/signals", async (req, res) => {
-  const sector = (req.query.sector as string) ?? "Technology";
+  const requestedSector = (req.query.sector as string | undefined)?.trim() || "Technology";
   const signal = (req.query.signal as string) ?? "hammer_weekly";
 
-  if (!SECTORS.includes(sector)) {
-    res.status(400).json({ error: "Invalid sector" });
-    return;
-  }
-  if (signal !== "hammer_weekly") {
-    res.status(400).json({ error: "Unsupported signal. Use: hammer_weekly" });
-    return;
-  }
+  const marketWideDaily = signal === "hammer_daily"
+    && requestedSector.toLowerCase() === "all";
+  const sector = marketWideDaily ? "all" : requestedSector;
 
-  const cacheKey = `signals:${sector}:${signal}:v2`;
-  const cached = getCached(cacheKey);
+  if (!marketWideDaily && !SECTORS.includes(sector)) {
+    res.status(400).json({ error: "Invalid sector", message: "Invalid sector" });
+    return;
+  }
+  if (signal !== "hammer_weekly" && signal !== "hammer_daily") {
+    const message = "Unsupported signal. Use: hammer_daily or hammer_weekly";
+    res.status(400).json({ error: message, message });
+    return;
+  }
+  const exchangeToday = exchangeLocalDateKey(new Date());
+  // Daily results are safe to reuse inside the same exchange-local date.
+  // Weekly completion depends on the provider's live marketState (including
+  // holiday and early-close sessions), so it is deliberately not cached.
+  const cacheKey = signal === "hammer_daily"
+    ? `signals:${sector}:${signal}:v5:${exchangeToday}`
+    : null;
+  const cached = cacheKey ? getCached(cacheKey) : undefined;
   if (cached) { res.json(cached); return; }
 
   try {
-    const symbols = (SECTOR_TICKERS[sector] ?? []).slice(0, 60);
+    const scanSectors = marketWideDaily ? SECTORS : [sector];
+    const allScanSymbols = [...new Set(scanSectors.flatMap((name) => SECTOR_TICKERS[name] ?? []))];
+    const symbols = marketWideDaily ? allScanSymbols : allScanSymbols.slice(0, 60);
 
     // First get quotes for basic data
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let yqArr: any[] = [];
-    try {
-      const raw = await yahooFinance.quote(symbols, {}, { validateResult: false });
-      yqArr = Array.isArray(raw) ? raw : [raw];
-    } catch { /* continue */ }
+    for (let i = 0; i < symbols.length; i += 60) {
+      try {
+        const raw = await yahooFinance.quote(symbols.slice(i, i + 60), {}, { validateResult: false });
+        yqArr.push(...(Array.isArray(raw) ? raw : [raw]));
+      } catch {
+        // Keep scanning historical candles when a quote batch is unavailable.
+      }
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const yqMap = new Map<string, any>();
     yqArr.forEach(q => { if (q?.symbol) yqMap.set(q.symbol, q); });
 
+    if (signal === "hammer_daily") {
+      const period1 = new Date(Date.now() - 45 * 86400000).toISOString().split("T")[0];
+      const dailyResults: Array<{
+        sym: string;
+        candle: {
+          date: string | Date;
+          open: number | null;
+          high: number | null;
+          low: number | null;
+          close: number | null;
+        } | undefined;
+        failed: boolean;
+      }> = [];
+
+      // Historical requests are intentionally bounded so one slow provider
+      // response cannot create an unbounded fan-out from a button click.
+      for (let i = 0; i < symbols.length; i += 8) {
+        const batch = symbols.slice(i, i + 8);
+        const batchResults = await Promise.all(batch.map(async (sym) => {
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const chart = await (yahooFinance as any).chart(
+              sym,
+              { period1, interval: "1d" },
+              { validateResult: false },
+            );
+            const quotes = (chart?.quotes ?? []) as Array<{
+              date: string | Date;
+              open: number | null;
+              high: number | null;
+              low: number | null;
+              close: number | null;
+            }>;
+            const candle = selectPreviousCompletedCandle(quotes, exchangeToday);
+            return { sym, candle, failed: !candle };
+          } catch {
+            return { sym, candle: undefined, failed: true };
+          }
+        }));
+        dailyResults.push(...batchResults);
+      }
+
+      const matches = dailyResults
+        .filter((result) => result.candle && isHammerCandle(
+          result.candle.open,
+          result.candle.high,
+          result.candle.low,
+          result.candle.close,
+        ))
+        .map((result) => {
+          const q = yqMap.get(result.sym);
+          const candle = result.candle!;
+          const matchSector = SECTORS.find((name) => (SECTOR_TICKERS[name] ?? []).includes(result.sym)) ?? null;
+          const mc = q?.marketCap ?? 0;
+          return {
+            symbol: result.sym,
+            name: q?.longName ?? q?.shortName ?? result.sym,
+            sector: matchSector,
+            price: q?.regularMarketPrice ?? null,
+            change1d: q?.regularMarketChangePercent ?? null,
+            marketCap: mc,
+            marketCapFormatted: mc > 0 ? fmtCap(mc) : "N/A",
+            industry: q?.industry ?? null,
+            qualityTier: capTier(mc),
+            volume: q?.regularMarketVolume ?? null,
+            avgVolume: q?.averageDailyVolume3Month ?? null,
+            relVolume: (q?.regularMarketVolume && q?.averageDailyVolume3Month > 0)
+              ? q.regularMarketVolume / q.averageDailyVolume3Month : null,
+            vs52High: (q?.fiftyTwoWeekHigh && q?.regularMarketPrice)
+              ? ((q.regularMarketPrice / q.fiftyTwoWeekHigh - 1) * 100) : null,
+            vs200dma: (q?.twoHundredDayAverage && q?.regularMarketPrice)
+              ? ((q.regularMarketPrice / q.twoHundredDayAverage - 1) * 100) : null,
+            dayOpen: null,
+            dayHigh: null,
+            dayLow: null,
+            hammerDaily: true,
+            candleDate: typeof candle.date === "string"
+              ? candle.date.slice(0, 10)
+              : candle.date.toISOString().slice(0, 10),
+            candleOpen: candle.open,
+            candleHigh: candle.high,
+            candleLow: candle.low,
+            candleClose: candle.close,
+            isHammerDaily: true,
+          };
+        });
+
+      const candleDates = [...new Set(dailyResults
+        .flatMap((result) => result.candle ? [candleDateKey(result.candle.date)] : []))]
+        .sort();
+      const failedCount = dailyResults.filter((result) => result.failed).length;
+      const result = {
+        sector,
+        signal,
+        matches,
+        count: matches.length,
+        scannedCount: symbols.length,
+        successfulCount: symbols.length - failedCount,
+        failedCount,
+        complete: failedCount === 0,
+        candleDate: candleDates.length === 1 ? candleDates[0] : candleDates.at(-1) ?? null,
+        cachedAt: new Date().toISOString(),
+      };
+      if (result.complete && cacheKey) {
+        setCached(cacheKey, result, 15 * 60 * 1000);
+      }
+      res.json(result);
+      return;
+    }
+
     // Fetch weekly chart for each symbol — concurrency limit 6
     const threeWeeksAgo = new Date(Date.now() - 28 * 86400000).toISOString().split("T")[0];
 
-    async function fetchWeeklyHammer(sym: string): Promise<{ isHammerWeekly: boolean; weekOpen: number | null; weekHigh: number | null; weekLow: number | null; weekClose: number | null }> {
+    async function fetchWeeklyHammer(sym: string): Promise<{
+      isHammerWeekly: boolean;
+      weekDate: string | null;
+      weekOpen: number | null;
+      weekHigh: number | null;
+      weekLow: number | null;
+      weekClose: number | null;
+      failed: boolean;
+    }> {
       try {
+        const quote = yqMap.get(sym);
+        if (!quote?.marketState) {
+          return {
+            isHammerWeekly: false,
+            weekDate: null,
+            weekOpen: null,
+            weekHigh: null,
+            weekLow: null,
+            weekClose: null,
+            failed: true,
+          };
+        }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const chart = await (yahooFinance as any).chart(sym, { period1: threeWeeksAgo, interval: "1wk" });
+        const chart = await (yahooFinance as any).chart(
+          sym,
+          { period1: threeWeeksAgo, interval: "1wk" },
+          { validateResult: false },
+        );
         const quotes = (chart?.quotes ?? []) as Array<{ open: number; high: number; low: number; close: number; date: Date }>;
-        // Use the most recent complete weekly candle
-        const candle = quotes.length >= 2 ? quotes[quotes.length - 2] : quotes[quotes.length - 1];
-        if (!candle) return { isHammerWeekly: false, weekOpen: null, weekHigh: null, weekLow: null, weekClose: null };
+        const groupedWeeks = new Map<string, Array<{ open: number; high: number; low: number; close: number; date: string }>>();
+        for (const rawQuote of quotes) {
+          const quote = { ...rawQuote, date: candleDateKey(rawQuote.date) };
+          const weekStart = isoWeekStart(quote.date);
+          groupedWeeks.set(weekStart, [...(groupedWeeks.get(weekStart) ?? []), quote]);
+        }
+        const completedWeekStart = latestCompletedWeekStart(
+          groupedWeeks,
+          exchangeToday,
+          quote.marketState,
+        );
+        const candle = completedWeekStart
+          ? groupedWeeks.get(completedWeekStart)?.at(-1)
+          : undefined;
+        if (!candle) {
+          return {
+            isHammerWeekly: false,
+            weekDate: null,
+            weekOpen: null,
+            weekHigh: null,
+            weekLow: null,
+            weekClose: null,
+            failed: true,
+          };
+        }
         return {
-          isHammerWeekly: isHammer(candle.open, candle.high, candle.low, candle.close),
+          isHammerWeekly: isHammerCandle(candle.open, candle.high, candle.low, candle.close),
+          weekDate: candleDateKey(candle.date),
           weekOpen:  candle.open  ?? null,
           weekHigh:  candle.high  ?? null,
           weekLow:   candle.low   ?? null,
           weekClose: candle.close ?? null,
+          failed: false,
         };
       } catch {
-        return { isHammerWeekly: false, weekOpen: null, weekHigh: null, weekLow: null, weekClose: null };
+        return {
+          isHammerWeekly: false,
+          weekDate: null,
+          weekOpen: null,
+          weekHigh: null,
+          weekLow: null,
+          weekClose: null,
+          failed: true,
+        };
       }
     }
 
@@ -354,9 +533,11 @@ router.get("/sectors/signals", async (req, res) => {
       .map(r => {
         const q = yqMap.get(r.sym);
         const mc = q?.marketCap ?? 0;
+          const matchSector = SECTORS.find((name) => (SECTOR_TICKERS[name] ?? []).includes(r.sym)) ?? null;
         return {
           symbol:             r.sym,
           name:               q?.longName ?? q?.shortName ?? r.sym,
+            sector:             matchSector,
           price:              q?.regularMarketPrice ?? null,
           change1d:           q?.regularMarketChangePercent ?? null,
           marketCap:          mc,
@@ -371,6 +552,16 @@ router.get("/sectors/signals", async (req, res) => {
             ? ((q.regularMarketPrice / q.fiftyTwoWeekHigh - 1) * 100) : null,
           vs200dma: (q?.twoHundredDayAverage && q?.regularMarketPrice)
             ? ((q.regularMarketPrice / q.twoHundredDayAverage - 1) * 100) : null,
+            dayOpen:            null,
+            dayHigh:            null,
+            dayLow:             null,
+            hammerDaily:        false,
+            candleDate:         r.weekDate,
+            candleOpen:         null,
+            candleHigh:         null,
+            candleLow:          null,
+            candleClose:        null,
+            isHammerDaily:      false,
           weekOpen:  r.weekOpen,
           weekHigh:  r.weekHigh,
           weekLow:   r.weekLow,
@@ -379,12 +570,27 @@ router.get("/sectors/signals", async (req, res) => {
         };
       });
 
-    const result = { sector, signal, matches, count: matches.length, scannedCount: symbols.length, cachedAt: new Date().toISOString() };
-    setCached(cacheKey, result, 60 * 60 * 1000); // 60-min cache for signal scans
+    const failedCount = results.filter((result) => result.failed).length;
+    const weeklyDates = [...new Set(results.flatMap((result) => result.weekDate ? [result.weekDate] : []))].sort();
+    const result = {
+      sector,
+      signal,
+      matches,
+      count: matches.length,
+      scannedCount: symbols.length,
+      successfulCount: symbols.length - failedCount,
+      failedCount,
+      complete: failedCount === 0,
+      candleDate: weeklyDates.length === 1 ? weeklyDates[0] : weeklyDates.at(-1) ?? null,
+      cachedAt: new Date().toISOString(),
+    };
+    if (result.complete && cacheKey) {
+      setCached(cacheKey, result, 60 * 60 * 1000); // 60-min cache for signal scans
+    }
     res.json(result);
   } catch (err) {
     req.log?.error({ err }, "Sector signals scan failed");
-    res.status(500).json({ error: "Failed to run signal scan" });
+    res.status(500).json({ error: "Failed to run signal scan", message: "Failed to run signal scan" });
   }
 });
 

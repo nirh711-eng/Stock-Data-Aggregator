@@ -594,6 +594,65 @@ export const GetMarketDailyReportResponse = zod.object({
 });
 
 /**
+ * Returns stocks matching a candle signal. Daily hammer scans use the latest completed trading session before the exchange-local current date; pass sector=all for a market-wide scan.
+ * @summary Scan completed daily or weekly candles for a signal
+ */
+export const getSectorSignalsQuerySectorDefault = `Technology`;
+export const getSectorSignalsQuerySignalDefault = `hammer_weekly`;
+
+export const GetSectorSignalsQueryParams = zod.object({
+  sector: zod.coerce.string().default(getSectorSignalsQuerySectorDefault),
+  signal: zod
+    .enum(["hammer_daily", "hammer_weekly"])
+    .default(getSectorSignalsQuerySignalDefault),
+});
+
+export const GetSectorSignalsResponse = zod.object({
+  sector: zod.string(),
+  signal: zod.enum(["hammer_daily", "hammer_weekly"]),
+  matches: zod.array(
+    zod.object({
+      symbol: zod.string(),
+      name: zod.string(),
+      sector: zod.string().nullable(),
+      price: zod.number().nullable(),
+      change1d: zod.number().nullable(),
+      marketCap: zod.number(),
+      marketCapFormatted: zod.string(),
+      industry: zod.string().nullable(),
+      qualityTier: zod.enum(["leader", "mid", "radar", "speculative"]),
+      volume: zod.number().nullable(),
+      avgVolume: zod.number().nullable(),
+      relVolume: zod.number().nullable(),
+      vs52High: zod.number().nullable(),
+      vs200dma: zod.number().nullable(),
+      dayOpen: zod.number().nullable(),
+      dayHigh: zod.number().nullable(),
+      dayLow: zod.number().nullable(),
+      hammerDaily: zod.boolean(),
+      candleDate: zod.string().nullable(),
+      candleOpen: zod.number().nullable(),
+      candleHigh: zod.number().nullable(),
+      candleLow: zod.number().nullable(),
+      candleClose: zod.number().nullable(),
+      isHammerDaily: zod.boolean(),
+      weekOpen: zod.number().nullish(),
+      weekHigh: zod.number().nullish(),
+      weekLow: zod.number().nullish(),
+      weekClose: zod.number().nullish(),
+      isHammerWeekly: zod.boolean().optional(),
+    }),
+  ),
+  count: zod.number(),
+  scannedCount: zod.number(),
+  successfulCount: zod.number(),
+  failedCount: zod.number(),
+  complete: zod.boolean(),
+  candleDate: zod.string().nullable(),
+  cachedAt: zod.string(),
+});
+
+/**
  * @summary Read public article metadata from a URL
  */
 export const FetchArticleMetadataBody = zod.object({

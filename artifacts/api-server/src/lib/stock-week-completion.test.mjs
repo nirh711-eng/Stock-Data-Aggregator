@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isoWeekStart, latestCompletedWeekStart } from "./stock-week-completion.ts";
+import {
+  isoWeekStart,
+  latestCompletedWeekStart,
+} from "./stock-week-completion.ts";
 
 function sessions(...dates) {
   return dates.map((date) => ({ date }));
@@ -40,4 +43,15 @@ test("treats the Friday week as complete over the weekend", () => {
 test("calculates the exchange-local ISO week boundary", () => {
   assert.equal(isoWeekStart("2026-08-23"), "2026-08-17");
   assert.equal(isoWeekStart("2026-08-24"), "2026-08-24");
+});
+
+test("keeps a Friday holiday or early-close week when the provider marks the market closed", () => {
+  const goodFriday = new Map([
+    ["2026-03-30", sessions("2026-03-30", "2026-03-31", "2026-04-01", "2026-04-02")],
+  ]);
+  const earlyCloseFriday = new Map([
+    ["2026-11-23", sessions("2026-11-23", "2026-11-24", "2026-11-25", "2026-11-27")],
+  ]);
+  assert.equal(latestCompletedWeekStart(goodFriday, "2026-04-03", "CLOSED"), "2026-03-30");
+  assert.equal(latestCompletedWeekStart(earlyCloseFriday, "2026-11-27", "CLOSED"), "2026-11-23");
 });

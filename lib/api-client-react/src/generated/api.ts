@@ -23,11 +23,13 @@ import type {
   DailyAnalysis,
   DeepAnalysis,
   ErrorResponse,
+  GetSectorSignalsParams,
   GetStockHistoryParams,
   HealthStatus,
   MarketAlertScanRequest,
   MarketAlertScanResponse,
   MarketDailyReport,
+  SectorSignalResponse,
   StockAnalytics,
   StockData,
   StockHistory,
@@ -922,6 +924,104 @@ export function useGetMarketDailyReport<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetMarketDailyReportQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns stocks matching a candle signal. Daily hammer scans use the latest completed trading session before the exchange-local current date; pass sector=all for a market-wide scan.
+ * @summary Scan completed daily or weekly candles for a signal
+ */
+export const getGetSectorSignalsUrl = (params?: GetSectorSignalsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/sectors/signals?${stringifiedParams}`
+    : `/api/sectors/signals`;
+};
+
+export const getSectorSignals = async (
+  params?: GetSectorSignalsParams,
+  options?: RequestInit,
+): Promise<SectorSignalResponse> => {
+  return customFetch<SectorSignalResponse>(getGetSectorSignalsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetSectorSignalsQueryKey = (
+  params?: GetSectorSignalsParams,
+) => {
+  return [`/api/sectors/signals`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetSectorSignalsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSectorSignals>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: GetSectorSignalsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSectorSignals>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetSectorSignalsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getSectorSignals>>
+  > = ({ signal }) => getSectorSignals(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSectorSignals>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSectorSignalsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSectorSignals>>
+>;
+export type GetSectorSignalsQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Scan completed daily or weekly candles for a signal
+ */
+
+export function useGetSectorSignals<
+  TData = Awaited<ReturnType<typeof getSectorSignals>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: GetSectorSignalsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getSectorSignals>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSectorSignalsQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

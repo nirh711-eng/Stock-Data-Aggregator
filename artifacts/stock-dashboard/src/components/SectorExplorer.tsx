@@ -3,8 +3,14 @@ import { useQuery } from "@tanstack/react-query";
 import {
   TrendingUp, TrendingDown, RefreshCw, ArrowUpDown,
   ChevronUp, ChevronDown, Minus, ExternalLink,
-  Flame, Hammer, BarChart2,
+  Flame, Hammer, BarChart2, ScanLine, CalendarDays,
 } from "lucide-react";
+import {
+  getGetSectorSignalsQueryKey,
+  useGetSectorSignals,
+  type SectorSignalMatch,
+  type SectorSignalResponse,
+} from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -44,22 +50,12 @@ interface SectorData {
   cachedAt: string;
 }
 
-interface SignalMatch extends SectorStock {
-  weekOpen: number | null;
-  weekHigh: number | null;
-  weekLow: number | null;
-  weekClose: number | null;
-  isHammerWeekly: boolean;
-}
-
-interface SignalData {
-  sector: string;
-  signal: string;
-  matches: SignalMatch[];
-  count: number;
-  scannedCount: number;
-  cachedAt: string;
-}
+type SignalMatch = SectorSignalMatch & {
+  exchange?: string | null;
+  pe?: number | null;
+  beta?: number | null;
+};
+type SignalData = SectorSignalResponse;
 
 // ── Config ─────────────────────────────────────────────────────────────────────
 
@@ -127,12 +123,6 @@ async function fetchSector(sector: string): Promise<SectorData> {
   return r.json() as Promise<SectorData>;
 }
 
-async function fetchSignals(sector: string, signal: string): Promise<SignalData> {
-  const r = await fetch(`${BASE}/api/sectors/signals?sector=${encodeURIComponent(sector)}&signal=${signal}`);
-  if (!r.ok) throw new Error("Failed");
-  return r.json() as Promise<SignalData>;
-}
-
 function pctColor(v: number | null): string {
   if (v == null) return "text-muted-foreground";
   if (v > 0) return "text-emerald-500";
@@ -185,6 +175,7 @@ export function SectorExplorer({ onSelectTicker }: Props) {
   const [filter, setFilter]     = useState<FilterMode>("all");
   const [sortKey, setSortKey]   = useState<SortKey>("marketCap");
   const [sortAsc, setSortAsc]   = useState(false);
+  const [marketDailyRequested, setMarketDailyRequested] = useState(false);
 
   // Main sector data
   const { data, isLoading, isFetching, refetch } = useQuery<SectorData>({
@@ -193,13 +184,86 @@ export function SectorExplorer({ onSelectTicker }: Props) {
     staleTime: 30 * 60 * 1000,
   });
 
-  // Weekly hammer signals — only fetched when that filter is active
-  const { data: signalData, isLoading: isSignalLoading, isFetching: isSignalFetching } = useQuery<SignalData>({
-    queryKey: ["sectorSignals", sector, "hammer_weekly"],
-    queryFn:  () => fetchSignals(sector, "hammer_weekly"),
-    enabled:  filter === "hammer_weekly",
-    staleTime: 60 * 60 * 1000,
-  });
+  // Candle signals are loaded only when their filter or explicit market scan is active.
+  const {
+    data: weeklySignalData,
+    isLoading: isWeeklySignalLoading,
+    isFetching: isWeeklySignalFetching,
+    isError: isWeeklySignalError,
+    refetch: refetchWeeklySignal,
+  } = useGetSectorSignals(
+    { sector, signal: "hammer_weekly" },
+    {
+      query: {
+        queryKey: getGetSectorSignalsQueryKey({ sector, signal: "hammer_weekly" }),
+        enabled: filter === "hammer_weekly",
+        staleTime: 0,
+        refetchOnMount: "always",
+      },
+    },
+  );
+  const {
+    data: sectorDailySignalData,
+    isLoading: isSectorDailyLoading,
+    isFetching: isSectorDailyFetching,
+    isError: isSectorDailyError,
+    refetch: refetchSectorDaily,
+  } = useGetSectorSignals(
+    { sector, signal: "hammer_daily" },
+    {
+      query: {
+        queryKey: getGetSectorSignalsQueryKey({ sector, signal: "hammer_daily" }),
+        enabled: filter === "hammer_daily" && !marketDailyRequested,
+        staleTime: 0,
+        refetchOnMount: "always",
+      },
+    },
+  );
+  const {
+    data: marketDailySignalData,
+    isLoading: isMarketDailyLoading,
+    isFetching: isMarketDailyFetching,
+    isError: isMarketDailyError,
+    refetch: refetchMarketDaily,
+  } = useGetSectorSignals(
+    { sector: "all", signal: "hammer_daily" },
+    {
+      query: {
+        queryKey: getGetSectorSignalsQueryKey({ sector: "all", signal: "hammer_daily" }),
+        enabled: marketDailyRequested,
+        staleTime: 0,
+        refetchOnMount: "always",
+        retry: 1,
+      },
+    },
+  );
+
+  const signalData: SignalData | undefined = filter === "hammer_weekly"
+    ? weeklySignalData
+    : marketDailyRequested
+      ? marketDailySignalData
+      : sectorDailySignalData;
+  const isSignalLoading = filter === "hammer_weekly"
+    ? isWeeklySignalLoading
+    : marketDailyRequested
+      ? isMarketDailyLoading
+      : isSectorDailyLoading;
+  const isSignalFetching = filter === "hammer_weekly"
+    ? isWeeklySignalFetching
+    : marketDailyRequested
+      ? isMarketDailyFetching
+      : isSectorDailyFetching;
+  const isSignalError = filter === "hammer_weekly"
+    ? isWeeklySignalError
+    : marketDailyRequested
+      ? isMarketDailyError
+      : isSectorDailyError;
+  const isSignalIncomplete = Boolean(signalData && !signalData.complete);
+  const refetchSignal = filter === "hammer_weekly"
+    ? refetchWeeklySignal
+    : marketDailyRequested
+      ? refetchMarketDaily
+      : refetchSectorDaily;
 
   const tierCounts = useMemo(() => {
     if (!data?.stocks) return {} as Record<string, number>;
@@ -212,13 +276,13 @@ export function SectorExplorer({ onSelectTicker }: Props) {
   const signalCounts = useMemo(() => {
     if (!data?.stocks) return { unusual_volume: 0, hammer_daily: 0 };
     const unusual = data.stocks.filter(s => (s.relVolume ?? 0) >= 2.0).length;
-    const hammerD  = data.stocks.filter(s => s.hammerDaily).length;
+    const hammerD  = filter === "hammer_daily" ? (signalData?.count ?? 0) : 0;
     return { unusual_volume: unusual, hammer_daily: hammerD };
-  }, [data]);
+  }, [data, filter, signalData]);
 
   // Build the displayed list based on active filter
   const displayed = useMemo((): (SectorStock | SignalMatch)[] => {
-    if (filter === "hammer_weekly") {
+    if (filter === "hammer_weekly" || filter === "hammer_daily") {
       return signalData?.matches ?? [];
     }
     if (!data?.stocks) return [];
@@ -228,7 +292,6 @@ export function SectorExplorer({ onSelectTicker }: Props) {
     if (filter === "radar")       list = list.filter(s => s.qualityTier === "radar");
     if (filter === "speculative") list = list.filter(s => s.qualityTier === "speculative");
     if (filter === "unusual_volume") list = list.filter(s => (s.relVolume ?? 0) >= 2.0);
-    if (filter === "hammer_daily")   list = list.filter(s => s.hammerDaily);
     return list;
   }, [data, signalData, filter]);
 
@@ -240,7 +303,7 @@ export function SectorExplorer({ onSelectTicker }: Props) {
       if (sortKey === "marketCap") { av = a.marketCap; bv = b.marketCap; }
       if (sortKey === "change1d")  { av = a.change1d;  bv = b.change1d;  }
       if (sortKey === "pe")        { av = (a.pe != null && a.pe > 0) ? a.pe : null; bv = (b.pe != null && b.pe > 0) ? b.pe : null; }
-      if (sortKey === "beta")      { av = a.beta;  bv = b.beta; }
+      if (sortKey === "beta")      { av = a.beta ?? null;  bv = b.beta ?? null; }
       if (sortKey === "vs52High")  { av = a.vs52High; bv = b.vs52High; }
       if (sortKey === "relVolume") { av = a.relVolume; bv = b.relVolume; }
       if (av == null && bv == null) return 0;
@@ -265,11 +328,21 @@ export function SectorExplorer({ onSelectTicker }: Props) {
     ? Math.round((Date.now() - new Date(data.cachedAt).getTime()) / 60000)
     : null;
 
-  const isWeeklyLoading = filter === "hammer_weekly" && (isSignalLoading || isSignalFetching);
+  const isSignalLoadingActive = (filter === "hammer_weekly" || filter === "hammer_daily")
+    && (isSignalLoading || isSignalFetching);
 
   const showHammerCols   = filter === "hammer_daily" || filter === "hammer_weekly";
   const showRelVolCol    = filter === "unusual_volume";
   const showWeeklyCandle = filter === "hammer_weekly";
+
+  const runMarketDailyScan = () => {
+    setFilter("hammer_daily");
+    if (marketDailyRequested) {
+      void refetchMarketDaily();
+      return;
+    }
+    setMarketDailyRequested(true);
+  };
 
   return (
     <div className="space-y-4">
@@ -278,7 +351,7 @@ export function SectorExplorer({ onSelectTicker }: Props) {
         {SECTORS.map(s => (
           <button
             key={s.en}
-            onClick={() => { setSector(s.en); setFilter("all"); }}
+            onClick={() => { setSector(s.en); setFilter("all"); setMarketDailyRequested(false); }}
             className={`text-xs px-3 py-1.5 rounded-full border transition-all font-medium
               ${sector === s.en
                 ? "bg-primary text-primary-foreground border-primary"
@@ -287,6 +360,28 @@ export function SectorExplorer({ onSelectTicker }: Props) {
             {s.he}
           </button>
         ))}
+      </div>
+
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-violet-500/25 bg-violet-500/5 px-3 py-3">
+        <div className="space-y-0.5">
+          <div className="flex items-center gap-2 text-sm font-semibold text-violet-300">
+            <Hammer className="w-4 h-4" />
+            סורק פטיש יומי — רשימות הסקטורים
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            סורק את רשימות המניות הקיימות בכל הסקטורים, לפי יום המסחר האחרון שהושלם בלבד.
+          </p>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          onClick={runMarketDailyScan}
+          disabled={isMarketDailyLoading || isMarketDailyFetching}
+          className="shrink-0 bg-violet-600 text-white hover:bg-violet-500"
+        >
+          <ScanLine className={`w-3.5 h-3.5 ml-1.5 ${(isMarketDailyLoading || isMarketDailyFetching) ? "animate-spin" : ""}`} />
+          {(isMarketDailyLoading || isMarketDailyFetching) ? "סורק את השוק..." : "סרוק פטיש יומי"}
+        </Button>
       </div>
 
       {/* Tier Filters */}
@@ -315,7 +410,11 @@ export function SectorExplorer({ onSelectTicker }: Props) {
           {SIGNALS.map(sig => (
             <button
               key={sig.key}
-              onClick={() => { setFilter(sig.key); if (sig.key === "unusual_volume") setSortKey("relVolume"); }}
+              onClick={() => {
+                setFilter(sig.key);
+                setMarketDailyRequested(false);
+                if (sig.key === "unusual_volume") setSortKey("relVolume");
+              }}
               className={`text-[11px] px-2.5 py-1 rounded-full border transition-all flex items-center gap-1
                 ${filter === sig.key
                   ? `border-current ${sig.color} bg-current/10 font-semibold`
@@ -324,7 +423,7 @@ export function SectorExplorer({ onSelectTicker }: Props) {
               {sig.icon}{sig.label}
               {sig.key === "unusual_volume" && data && <span className="opacity-60">({signalCounts.unusual_volume})</span>}
               {sig.key === "hammer_daily"   && data && <span className="opacity-60">({signalCounts.hammer_daily})</span>}
-              {sig.key === "hammer_weekly"  && signalData && <span className="opacity-60">({signalData.count})</span>}
+              {sig.key === "hammer_weekly" && filter === "hammer_weekly" && signalData && <span className="opacity-60">({signalData.count})</span>}
             </button>
           ))}
           <div className="mr-auto flex items-center gap-2">
@@ -333,7 +432,13 @@ export function SectorExplorer({ onSelectTicker }: Props) {
             )}
             <Button
               variant="ghost" size="icon" className="h-6 w-6"
-              onClick={() => { refetch(); }}
+              onClick={() => {
+                if (filter === "hammer_daily" || filter === "hammer_weekly") {
+                  void refetchSignal();
+                } else {
+                  void refetch();
+                }
+              }}
               disabled={isFetching || isSignalFetching}
             >
               <RefreshCw className={`w-3 h-3 ${(isFetching || isSignalFetching) ? "animate-spin" : ""}`} />
@@ -352,14 +457,35 @@ export function SectorExplorer({ onSelectTicker }: Props) {
       {filter === "hammer_daily" && (
         <div className="flex items-center gap-2 text-xs bg-violet-500/10 border border-violet-500/30 rounded-lg px-3 py-2 text-violet-400">
           <Hammer className="w-3.5 h-3.5 shrink-0" />
-          פטיש יומי — נר יומי עם צל תחתון ≥ 2× הגוף וצל עליון ≤ 35% הגוף (ממידע תוך-יום)
+          <span>
+            {marketDailyRequested ? "סריקת רשימות הסקטורים: " : `סקטור ${SECTORS.find((item) => item.en === sector)?.he ?? sector}: `}
+            פטיש ביום המסחר האחרון שהושלם — צל תחתון ≥ 2× הגוף וצל עליון ≤ 35% מהגוף.
+          </span>
+          {signalData?.candleDate && (
+            <span className="mr-auto flex items-center gap-1 whitespace-nowrap text-violet-300/80">
+              <CalendarDays className="w-3 h-3" />
+              {signalData.candleDate}
+            </span>
+          )}
+          {isSignalLoadingActive && <span className="animate-pulse mr-auto whitespace-nowrap">סורק...</span>}
         </div>
       )}
       {filter === "hammer_weekly" && (
         <div className="flex items-center gap-2 text-xs bg-cyan-500/10 border border-cyan-500/30 rounded-lg px-3 py-2 text-cyan-400">
           <Hammer className="w-3.5 h-3.5 shrink-0" />
           פטיש שבועי — נר שבועי אחרון שמציג תצורת פטיש — סריקה על {signalData?.scannedCount ?? "..."} מניות
-          {isWeeklyLoading && <span className="animate-pulse mr-2">⏳ סורק...</span>}
+          {isSignalLoadingActive && <span className="animate-pulse mr-2">⏳ סורק...</span>}
+        </div>
+      )}
+
+      {isSignalError && (filter === "hammer_daily" || filter === "hammer_weekly") && (
+        <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+          הסריקה נכשלה — נסה שוב בעוד רגע.
+        </div>
+      )}
+      {isSignalIncomplete && (filter === "hammer_daily" || filter === "hammer_weekly") && (
+        <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
+          כיסוי חלקי: {signalData?.successfulCount ?? 0} מתוך {signalData?.scannedCount ?? 0} מניות עובדו; {signalData?.failedCount ?? 0} לא היו זמינות אצל ספק הנתונים. ההתאמות המוצגות מבוססות על המניות שעובדו בהצלחה.
         </div>
       )}
 
@@ -379,7 +505,7 @@ export function SectorExplorer({ onSelectTicker }: Props) {
       </div>
 
       {/* Table */}
-      {(isLoading || isWeeklyLoading) ? (
+      {(isLoading || isSignalLoadingActive) ? (
         <div className="space-y-2">
           {Array.from({ length: 8 }).map((_, i) => (
             <div key={i} className="flex gap-3 items-center">
@@ -390,10 +516,18 @@ export function SectorExplorer({ onSelectTicker }: Props) {
             </div>
           ))}
         </div>
+      ) : isSignalError ? (
+        <div className="text-center py-12">
+          <p className="text-sm text-muted-foreground">לא ניתן להציג תוצאות מהסריקה.</p>
+        </div>
       ) : sorted.length === 0 ? (
         <div className="text-center py-12 space-y-2">
           <p className="text-sm text-muted-foreground">
-            {filter === "hammer_daily"   ? "לא נמצאו מניות עם תצורת פטיש יומי כרגע." :
+            {filter === "hammer_daily"
+              ? marketDailyRequested
+                ? "לא נמצאו מניות עם תצורת פטיש ביום המסחר הקודם בסריקת השוק."
+                : "לא נמצאו מניות עם תצורת פטיש ביום המסחר הקודם בסקטור זה."
+              :
              filter === "hammer_weekly"  ? "לא נמצאו מניות עם תצורת פטיש שבועי." :
              filter === "unusual_volume" ? "לא נמצאו מניות עם ווליום חריג כרגע." :
              filter === "radar"          ? "לא נמצאו מניות בטווח $100M–$1B בסקטור זה." :
@@ -419,7 +553,9 @@ export function SectorExplorer({ onSelectTicker }: Props) {
                 {!showRelVolCol && !showHammerCols && <th className="text-right pb-2 pr-3 font-medium">ביטא</th>}
                 {!showRelVolCol && <th className="text-right pb-2 pr-3 font-medium whitespace-nowrap">מ-52W Hi</th>}
                 {!showRelVolCol && <th className="text-right pb-2 pr-3 font-medium whitespace-nowrap">vs SMA200</th>}
+                {showHammerCols && <th className="text-right pb-2 pr-3 font-medium whitespace-nowrap">תאריך נר</th>}
                 {showHammerCols && <th className="text-center pb-2 pr-3 font-medium whitespace-nowrap">נר</th>}
+                {showHammerCols && <th className="text-right pb-2 pr-3 font-medium whitespace-nowrap">OHLC</th>}
                 <th className="text-right pb-2 pr-3 font-medium">דרגה</th>
                 <th className="pb-2 w-[3rem]" />
               </tr>
@@ -428,6 +564,10 @@ export function SectorExplorer({ onSelectTicker }: Props) {
               {sorted.map(s => {
                 const sw = s as SignalMatch;
                 const isHammerWeeklyRow = showWeeklyCandle && sw.isHammerWeekly;
+                const displayExchange = (s as SectorStock).exchange;
+                const candle = isHammerWeeklyRow
+                  ? { date: sw.candleDate, open: sw.weekOpen ?? null, high: sw.weekHigh ?? null, low: sw.weekLow ?? null, close: sw.weekClose ?? null, label: "שבועי" }
+                  : { date: sw.candleDate, open: sw.candleOpen ?? null, high: sw.candleHigh ?? null, low: sw.candleLow ?? null, close: sw.candleClose ?? null, label: "יומי" };
                 return (
                   <tr
                     key={s.symbol}
@@ -436,8 +576,8 @@ export function SectorExplorer({ onSelectTicker }: Props) {
                     {/* Symbol */}
                     <td className="py-2 pr-3">
                       <span className="font-mono font-bold text-foreground tracking-tight">{s.symbol}</span>
-                      {s.exchange && (
-                        <span className="block text-[9px] text-muted-foreground/50 font-mono">{s.exchange}</span>
+                      {displayExchange && (
+                        <span className="block text-[9px] text-muted-foreground/50 font-mono">{displayExchange}</span>
                       )}
                     </td>
 
@@ -522,15 +662,23 @@ export function SectorExplorer({ onSelectTicker }: Props) {
                       </td>
                     )}
 
+                    {showHammerCols && (
+                      <td className="py-2 pr-3 text-right font-mono text-[10px] text-muted-foreground/80 whitespace-nowrap">
+                        {candle.date ?? (isHammerWeeklyRow ? "שבוע אחרון" : "—")}
+                      </td>
+                    )}
+
                     {/* Hammer candle visual */}
                     {showHammerCols && (
                       <td className="py-1 pr-3 text-center">
-                        {showWeeklyCandle && isHammerWeeklyRow
-                          ? <HammerVisual o={sw.weekOpen} h={sw.weekHigh} l={sw.weekLow} c={sw.weekClose} label="שבועי" />
-                          : filter === "hammer_daily"
-                            ? <HammerVisual o={s.dayOpen} h={s.dayHigh} l={s.dayLow} c={s.price} label="יומי" />
-                            : <span className="text-muted-foreground/40 text-[9px]">—</span>
-                        }
+                        <HammerVisual o={candle.open} h={candle.high} l={candle.low} c={candle.close} label={candle.label} />
+                      </td>
+                    )}
+                    {showHammerCols && (
+                      <td className="py-2 pr-3 text-right font-mono text-[9px] leading-4 whitespace-nowrap text-muted-foreground/80">
+                        {candle.open != null && candle.high != null && candle.low != null && candle.close != null
+                          ? <span>O {candle.open.toFixed(2)}<br />H {candle.high.toFixed(2)} · L {candle.low.toFixed(2)}<br />C {candle.close.toFixed(2)}</span>
+                          : <span className="text-muted-foreground/40">—</span>}
                       </td>
                     )}
 
@@ -563,7 +711,13 @@ export function SectorExplorer({ onSelectTicker }: Props) {
         <div className="flex items-center justify-between text-[10px] text-muted-foreground/30 pt-1">
           <span>
             {filter === "unusual_volume" && <><Flame className="w-3 h-3 inline mr-1 text-orange-400/50" />relVolume ≥ 2.0x</>}
-            {filter === "hammer_daily"   && <><Hammer className="w-3 h-3 inline mr-1 text-violet-400/50" />צל תחתון ≥ 2× גוף, צל עליון ≤ 35%</>}
+            {filter === "hammer_daily" && (
+              <><Hammer className="w-3 h-3 inline mr-1 text-violet-400/50" />
+                {marketDailyRequested ? "סריקת רשימות הסקטורים" : "סריקת סקטור"} — {signalData?.count ?? 0} התאמות מתוך {signalData?.scannedCount ?? 0} מניות
+                {signalData?.candleDate ? ` · נר ${signalData.candleDate}` : ""}
+                {isSignalIncomplete ? ` · כיסוי ${signalData?.successfulCount ?? 0}/${signalData?.scannedCount ?? 0}` : ""}
+              </>
+            )}
             {filter === "hammer_weekly"  && <><Hammer className="w-3 h-3 inline mr-1 text-cyan-400/50" />נר שבועי אחרון — {signalData?.count ?? 0} מתוך {signalData?.scannedCount ?? 0} מניות</>}
             {isTier(filter) && "Yahoo Finance • cache 30 דקות"}
           </span>

@@ -593,6 +593,91 @@ export interface MarketAlertScanRequest {
   trackedArticles?: TrackedMarketArticle[];
 }
 
+export type SectorSignalResponseSignal =
+  (typeof SectorSignalResponseSignal)[keyof typeof SectorSignalResponseSignal];
+
+export const SectorSignalResponseSignal = {
+  hammer_daily: "hammer_daily",
+  hammer_weekly: "hammer_weekly",
+} as const;
+
+export type SectorSignalMatchQualityTier =
+  (typeof SectorSignalMatchQualityTier)[keyof typeof SectorSignalMatchQualityTier];
+
+export const SectorSignalMatchQualityTier = {
+  leader: "leader",
+  mid: "mid",
+  radar: "radar",
+  speculative: "speculative",
+} as const;
+
+export interface SectorSignalMatch {
+  symbol: string;
+  name: string;
+  /** @nullable */
+  sector: string | null;
+  /** @nullable */
+  price: number | null;
+  /** @nullable */
+  change1d: number | null;
+  marketCap: number;
+  marketCapFormatted: string;
+  /** @nullable */
+  industry: string | null;
+  qualityTier: SectorSignalMatchQualityTier;
+  /** @nullable */
+  volume: number | null;
+  /** @nullable */
+  avgVolume: number | null;
+  /** @nullable */
+  relVolume: number | null;
+  /** @nullable */
+  vs52High: number | null;
+  /** @nullable */
+  vs200dma: number | null;
+  /** @nullable */
+  dayOpen: number | null;
+  /** @nullable */
+  dayHigh: number | null;
+  /** @nullable */
+  dayLow: number | null;
+  hammerDaily: boolean;
+  /** @nullable */
+  candleDate: string | null;
+  /** @nullable */
+  candleOpen: number | null;
+  /** @nullable */
+  candleHigh: number | null;
+  /** @nullable */
+  candleLow: number | null;
+  /** @nullable */
+  candleClose: number | null;
+  isHammerDaily: boolean;
+  /** @nullable */
+  weekOpen?: number | null;
+  /** @nullable */
+  weekHigh?: number | null;
+  /** @nullable */
+  weekLow?: number | null;
+  /** @nullable */
+  weekClose?: number | null;
+  isHammerWeekly?: boolean;
+}
+
+export interface SectorSignalResponse {
+  sector: string;
+  signal: SectorSignalResponseSignal;
+  matches: SectorSignalMatch[];
+  count: number;
+  scannedCount: number;
+  successfulCount: number;
+  failedCount: number;
+  complete: boolean;
+  /** @nullable */
+  candleDate: string | null;
+  cachedAt: string;
+}
+
 export interface ArticleMetadataRequest {
   url: string;
 }
@@ -699,4 +784,17 @@ export const GetStockHistoryPeriod = {
   "3mo": "3mo",
   "6mo": "6mo",
   "1y": "1y",
+} as const;
+
+export type GetSectorSignalsParams = {
+  sector?: string;
+  signal?: GetSectorSignalsSignal;
+};
+
+export type GetSectorSignalsSignal =
+  (typeof GetSectorSignalsSignal)[keyof typeof GetSectorSignalsSignal];
+
+export const GetSectorSignalsSignal = {
+  hammer_daily: "hammer_daily",
+  hammer_weekly: "hammer_weekly",
 } as const;

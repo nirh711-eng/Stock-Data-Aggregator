@@ -294,6 +294,46 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /sectors/signals:
+    get:
+      operationId: getSectorSignals
+      tags: [market]
+      summary: Scan completed daily or weekly candles for a signal
+      description: Returns stocks matching a candle signal. Daily hammer scans use the latest completed trading session before the exchange-local current date; pass sector=all for a market-wide scan.
+      parameters:
+        - name: sector
+          in: query
+          required: false
+          schema:
+            type: string
+            default: Technology
+        - name: signal
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [hammer_daily, hammer_weekly]
+            default: hammer_weekly
+      responses:
+        "200":
+          description: Candle signal scan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SectorSignalResponse"
+        "400":
+          description: Invalid sector or signal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /alerts/article-metadata:
     post:
       operationId: fetchArticleMetadata
@@ -1715,6 +1755,132 @@ components:
             $ref: "#/components/schemas/TrackedMarketArticle"
       required:
         - watchlist
+
+    SectorSignalResponse:
+      type: object
+      properties:
+        sector:
+          type: string
+        signal:
+          type: string
+          enum: [hammer_daily, hammer_weekly]
+        matches:
+          type: array
+          items:
+            $ref: "#/components/schemas/SectorSignalMatch"
+        count:
+          type: integer
+        scannedCount:
+          type: integer
+        successfulCount:
+          type: integer
+        failedCount:
+          type: integer
+        complete:
+          type: boolean
+        candleDate:
+          type: ["string", "null"]
+        cachedAt:
+          type: string
+      required:
+        - sector
+        - signal
+        - matches
+        - count
+        - scannedCount
+        - successfulCount
+        - failedCount
+        - complete
+        - candleDate
+        - cachedAt
+
+    SectorSignalMatch:
+      type: object
+      properties:
+        symbol:
+          type: string
+        name:
+          type: string
+        sector:
+          type: ["string", "null"]
+        price:
+          type: ["number", "null"]
+        change1d:
+          type: ["number", "null"]
+        marketCap:
+          type: number
+        marketCapFormatted:
+          type: string
+        industry:
+          type: ["string", "null"]
+        qualityTier:
+          type: string
+          enum: [leader, mid, radar, speculative]
+        volume:
+          type: ["number", "null"]
+        avgVolume:
+          type: ["number", "null"]
+        relVolume:
+          type: ["number", "null"]
+        vs52High:
+          type: ["number", "null"]
+        vs200dma:
+          type: ["number", "null"]
+        dayOpen:
+          type: ["number", "null"]
+        dayHigh:
+          type: ["number", "null"]
+        dayLow:
+          type: ["number", "null"]
+        hammerDaily:
+          type: boolean
+        candleDate:
+          type: ["string", "null"]
+        candleOpen:
+          type: ["number", "null"]
+        candleHigh:
+          type: ["number", "null"]
+        candleLow:
+          type: ["number", "null"]
+        candleClose:
+          type: ["number", "null"]
+        isHammerDaily:
+          type: boolean
+        weekOpen:
+          type: ["number", "null"]
+        weekHigh:
+          type: ["number", "null"]
+        weekLow:
+          type: ["number", "null"]
+        weekClose:
+          type: ["number", "null"]
+        isHammerWeekly:
+          type: boolean
+      required:
+        - symbol
+        - name
+        - sector
+        - price
+        - change1d
+        - marketCap
+        - marketCapFormatted
+        - industry
+        - qualityTier
+        - volume
+        - avgVolume
+        - relVolume
+        - vs52High
+        - vs200dma
+        - dayOpen
+        - dayHigh
+        - dayLow
+        - hammerDaily
+        - candleDate
+        - candleOpen
+        - candleHigh
+        - candleLow
+        - candleClose
+        - isHammerDaily
 
     MarketAlertWatch:
       type: object
