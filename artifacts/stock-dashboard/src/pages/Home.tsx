@@ -23,6 +23,7 @@ import { NotificationCenter } from "@/components/NotificationCenter";
 import { TradingViewChart } from "@/components/TradingViewChart";
 import { StockAnalyticsPanel } from "@/components/StockAnalytics";
 import { MarketReport } from "@/components/MarketReport";
+import { EconomicCalendar } from "@/components/EconomicCalendar";
 import { BottleneckExplorer } from "@/components/BottleneckExplorer";
 import { SocialPulse } from "@/components/SocialPulse";
 import { BondYields } from "@/components/BondYields";
@@ -66,7 +67,7 @@ const formatHebrewNumber = (num: number, options?: Intl.NumberFormatOptions) => 
 export default function Home() {
   const [searchInput, setSearchInput] = useState("");
   const [activeTicker, setActiveTicker] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"search" | "sectors" | "market" | "bottlenecks" | "social" | "bonds" | "alerts">("search");
+  const [activeTab, setActiveTab] = useState<"search" | "sectors" | "market" | "economy" | "bottlenecks" | "social" | "bonds" | "alerts">("search");
   const queryClient = useQueryClient();
   const { signOut } = useClerk();
   const { user } = useUser();
@@ -230,9 +231,10 @@ export default function Home() {
         </header>
 
         {/* Tab Bar */}
-        <div className="flex items-center gap-1 border-b border-border pb-0 -mb-2">
+        <div className="flex items-center gap-1 overflow-x-auto border-b border-border pb-0 -mb-2">
           <button
             onClick={() => setActiveTab("search")}
+            data-testid="tab-search"
             className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
               ${activeTab === "search"
                 ? "border-primary text-primary"
@@ -243,6 +245,7 @@ export default function Home() {
           </button>
           <button
             onClick={() => setActiveTab("sectors")}
+            data-testid="tab-sectors"
             className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
               ${activeTab === "sectors"
                 ? "border-primary text-primary"
@@ -253,6 +256,7 @@ export default function Home() {
           </button>
           <button
             onClick={() => setActiveTab("market")}
+            data-testid="tab-market-report"
             className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
               ${activeTab === "market"
                 ? "border-primary text-primary"
@@ -262,7 +266,19 @@ export default function Home() {
             סיכום יומי
           </button>
           <button
+            onClick={() => setActiveTab("economy")}
+            data-testid="tab-economic-calendar"
+            className={`flex shrink-0 items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
+              ${activeTab === "economy"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"}`}
+          >
+            <Calendar className="w-3.5 h-3.5" />
+            נתונים כלכליים
+          </button>
+          <button
             onClick={() => setActiveTab("bottlenecks")}
+            data-testid="tab-bottlenecks"
             className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
               ${activeTab === "bottlenecks"
                 ? "border-primary text-primary"
@@ -273,6 +289,7 @@ export default function Home() {
           </button>
           <button
             onClick={() => setActiveTab("social")}
+            data-testid="tab-social"
             className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
               ${activeTab === "social"
                 ? "border-orange-400 text-orange-300"
@@ -283,6 +300,7 @@ export default function Home() {
           </button>
           <button
             onClick={() => setActiveTab("bonds")}
+            data-testid="tab-bonds"
             className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
               ${activeTab === "bonds"
                 ? "border-emerald-400 text-emerald-300"
@@ -293,6 +311,7 @@ export default function Home() {
           </button>
           <button
             onClick={() => setActiveTab("alerts")}
+            data-testid="tab-alerts"
             className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
               ${activeTab === "alerts"
                 ? "border-primary text-primary"
@@ -370,6 +389,13 @@ export default function Home() {
         {activeTab === "market" && (
           <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
             <MarketReport />
+          </div>
+        )}
+
+        {/* Important economic releases — U.S. and Israel */}
+        {activeTab === "economy" && (
+          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <EconomicCalendar />
           </div>
         )}
 

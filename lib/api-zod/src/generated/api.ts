@@ -594,6 +594,74 @@ export const GetMarketDailyReportResponse = zod.object({
 });
 
 /**
+ * Returns medium- and high-impact economic calendar events published by Investing.com, including recent results and upcoming consensus expectations.
+ * @summary Get important U.S. and Israeli economic releases from Investing.com
+ */
+export const getEconomicCalendarResponseUpcomingItemImportanceMax = 3;
+
+export const getEconomicCalendarResponseRecentItemImportanceMax = 3;
+
+export const GetEconomicCalendarResponse = zod.object({
+  source: zod.string(),
+  sourceUrl: zod.string().url(),
+  timeZone: zod.string(),
+  generatedAt: zod.coerce.date(),
+  upcoming: zod.array(
+    zod.object({
+      id: zod.string(),
+      dateTime: zod.coerce.date(),
+      country: zod.enum(["United States", "Israel"]),
+      countryCode: zod.enum(["US", "IL"]),
+      currency: zod.string(),
+      importance: zod
+        .number()
+        .min(1)
+        .max(getEconomicCalendarResponseUpcomingItemImportanceMax),
+      title: zod.string(),
+      actual: zod.string().nullable(),
+      forecast: zod.string().nullable(),
+      previous: zod.string().nullable(),
+      result: zod
+        .union([
+          zod.literal("better"),
+          zod.literal("worse"),
+          zod.literal("neutral"),
+          zod.literal(null),
+        ])
+        .nullable(),
+      eventUrl: zod.string().url(),
+    }),
+  ),
+  recent: zod.array(
+    zod.object({
+      id: zod.string(),
+      dateTime: zod.coerce.date(),
+      country: zod.enum(["United States", "Israel"]),
+      countryCode: zod.enum(["US", "IL"]),
+      currency: zod.string(),
+      importance: zod
+        .number()
+        .min(1)
+        .max(getEconomicCalendarResponseRecentItemImportanceMax),
+      title: zod.string(),
+      actual: zod.string().nullable(),
+      forecast: zod.string().nullable(),
+      previous: zod.string().nullable(),
+      result: zod
+        .union([
+          zod.literal("better"),
+          zod.literal("worse"),
+          zod.literal("neutral"),
+          zod.literal(null),
+        ])
+        .nullable(),
+      eventUrl: zod.string().url(),
+    }),
+  ),
+  unavailableCountries: zod.array(zod.string()),
+});
+
+/**
  * Returns stocks matching a candle signal. Daily hammer scans use the latest completed trading session before the exchange-local current date; pass sector=all for a market-wide scan.
  * @summary Scan completed daily or weekly candles for a signal
  */

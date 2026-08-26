@@ -22,6 +22,7 @@ import type {
   CompanyProfile,
   DailyAnalysis,
   DeepAnalysis,
+  EconomicCalendarResponse,
   ErrorResponse,
   GetSectorSignalsParams,
   GetStockHistoryParams,
@@ -924,6 +925,82 @@ export function useGetMarketDailyReport<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetMarketDailyReportQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns medium- and high-impact economic calendar events published by Investing.com, including recent results and upcoming consensus expectations.
+ * @summary Get important U.S. and Israeli economic releases from Investing.com
+ */
+export const getGetEconomicCalendarUrl = () => {
+  return `/api/economy/calendar`;
+};
+
+export const getEconomicCalendar = async (
+  options?: RequestInit,
+): Promise<EconomicCalendarResponse> => {
+  return customFetch<EconomicCalendarResponse>(getGetEconomicCalendarUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetEconomicCalendarQueryKey = () => {
+  return [`/api/economy/calendar`] as const;
+};
+
+export const getGetEconomicCalendarQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEconomicCalendar>>,
+  TError = ErrorType<ErrorResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getEconomicCalendar>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetEconomicCalendarQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getEconomicCalendar>>
+  > = ({ signal }) => getEconomicCalendar({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEconomicCalendar>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEconomicCalendarQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEconomicCalendar>>
+>;
+export type GetEconomicCalendarQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get important U.S. and Israeli economic releases from Investing.com
+ */
+
+export function useGetEconomicCalendar<
+  TData = Awaited<ReturnType<typeof getEconomicCalendar>>,
+  TError = ErrorType<ErrorResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getEconomicCalendar>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEconomicCalendarQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

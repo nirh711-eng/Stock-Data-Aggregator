@@ -294,6 +294,26 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
 
+  /economy/calendar:
+    get:
+      operationId: getEconomicCalendar
+      tags: [market]
+      summary: Get important U.S. and Israeli economic releases from Investing.com
+      description: Returns medium- and high-impact economic calendar events published by Investing.com, including recent results and upcoming consensus expectations.
+      responses:
+        "200":
+          description: Economic calendar events
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EconomicCalendarResponse"
+        "502":
+          description: Investing.com data is temporarily unavailable
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   /sectors/signals:
     get:
       operationId: getSectorSignals
@@ -1813,6 +1833,88 @@ components:
         - availabilityTrackingAvailable
         - candleDate
         - cachedAt
+
+    EconomicCalendarResponse:
+      type: object
+      properties:
+        source:
+          type: string
+        sourceUrl:
+          type: string
+          format: uri
+        timeZone:
+          type: string
+        generatedAt:
+          type: string
+          format: date-time
+        upcoming:
+          type: array
+          items:
+            $ref: "#/components/schemas/EconomicCalendarEvent"
+        recent:
+          type: array
+          items:
+            $ref: "#/components/schemas/EconomicCalendarEvent"
+        unavailableCountries:
+          type: array
+          items:
+            type: string
+      required:
+        - source
+        - sourceUrl
+        - timeZone
+        - generatedAt
+        - upcoming
+        - recent
+        - unavailableCountries
+
+    EconomicCalendarEvent:
+      type: object
+      properties:
+        id:
+          type: string
+        dateTime:
+          type: string
+          format: date-time
+        country:
+          type: string
+          enum: [United States, Israel]
+        countryCode:
+          type: string
+          enum: [US, IL]
+        currency:
+          type: string
+        importance:
+          type: integer
+          minimum: 1
+          maximum: 3
+        title:
+          type: string
+        actual:
+          type: ["string", "null"]
+        forecast:
+          type: ["string", "null"]
+        previous:
+          type: ["string", "null"]
+        result:
+          type: ["string", "null"]
+          enum: [better, worse, neutral, null]
+        eventUrl:
+          type: string
+          format: uri
+      required:
+        - id
+        - dateTime
+        - country
+        - countryCode
+        - currency
+        - importance
+        - title
+        - actual
+        - forecast
+        - previous
+        - result
+        - eventUrl
 
     UnavailableSymbol:
       type: object

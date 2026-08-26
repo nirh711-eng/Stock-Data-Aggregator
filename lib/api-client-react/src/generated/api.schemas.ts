@@ -703,6 +703,68 @@ export interface SectorSignalResponse {
   cachedAt: string;
 }
 
+export type EconomicCalendarEventCountry =
+  (typeof EconomicCalendarEventCountry)[keyof typeof EconomicCalendarEventCountry];
+
+export const EconomicCalendarEventCountry = {
+  United_States: "United States",
+  Israel: "Israel",
+} as const;
+
+export type EconomicCalendarEventCountryCode =
+  (typeof EconomicCalendarEventCountryCode)[keyof typeof EconomicCalendarEventCountryCode];
+
+export const EconomicCalendarEventCountryCode = {
+  US: "US",
+  IL: "IL",
+} as const;
+
+/**
+ * @nullable
+ */
+export type EconomicCalendarEventResult =
+  | (typeof EconomicCalendarEventResult)[keyof typeof EconomicCalendarEventResult]
+  | null;
+
+export const EconomicCalendarEventResult = {
+  better: "better",
+  worse: "worse",
+  neutral: "neutral",
+} as const;
+
+export interface EconomicCalendarEvent {
+  id: string;
+  dateTime: string;
+  country: EconomicCalendarEventCountry;
+  countryCode: EconomicCalendarEventCountryCode;
+  currency: string;
+  /**
+   * @minimum 1
+   * @maximum 3
+   */
+  importance: number;
+  title: string;
+  /** @nullable */
+  actual: string | null;
+  /** @nullable */
+  forecast: string | null;
+  /** @nullable */
+  previous: string | null;
+  /** @nullable */
+  result: EconomicCalendarEventResult;
+  eventUrl: string;
+}
+
+export interface EconomicCalendarResponse {
+  source: string;
+  sourceUrl: string;
+  timeZone: string;
+  generatedAt: string;
+  upcoming: EconomicCalendarEvent[];
+  recent: EconomicCalendarEvent[];
+  unavailableCountries: string[];
+}
+
 export interface ArticleMetadataRequest {
   url: string;
 }
