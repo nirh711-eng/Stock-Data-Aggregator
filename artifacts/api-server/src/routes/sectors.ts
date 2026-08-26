@@ -300,9 +300,13 @@ router.get("/sectors/screen", async (req, res) => {
 
     stocks.sort((a, b) => ((b?.marketCap ?? 0) - (a?.marketCap ?? 0)));
 
-    const availabilityObservations: AvailabilityObservation[] = quoteFetchSucceeded
-      ? symbols.map((symbol) => ({ symbol, quoteAvailable: yqMap.has(symbol) }))
-      : [];
+    // A rejected quote request is still an observed failure for every symbol
+    // in this scan. Leaving the observations empty would make a persistent
+    // provider outage invisible to the consecutive-failure tracker.
+    const availabilityObservations: AvailabilityObservation[] = symbols.map((symbol) => ({
+      symbol,
+      quoteAvailable: quoteFetchSucceeded ? yqMap.has(symbol) : false,
+    }));
     const availability = await trackAvailability(
       req,
       `screen:${sector}`,
