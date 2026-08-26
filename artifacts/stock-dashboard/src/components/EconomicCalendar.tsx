@@ -30,6 +30,55 @@ function formatEventTime(isoString: string) {
   }
 }
 
+const COUNTRY_LABELS: Record<string, string> = {
+  US: "ארה״ב",
+  IL: "ישראל",
+};
+
+type DayGroup = {
+  key: string;
+  label: string;
+  countries: Array<{
+    code: string;
+    label: string;
+    events: EconomicCalendarEvent[];
+  }>;
+};
+
+function groupEventsByDay(events: EconomicCalendarEvent[], descending = false): DayGroup[] {
+  const days = new Map<string, { date: Date; countries: Map<string, EconomicCalendarEvent[]> }>();
+
+  for (const event of events) {
+    const date = new Date(event.dateTime);
+    if (Number.isNaN(date.getTime())) continue;
+    const key = format(date, "yyyy-MM-dd");
+    const day = days.get(key) ?? { date, countries: new Map<string, EconomicCalendarEvent[]>() };
+    const countryEvents = day.countries.get(event.countryCode) ?? [];
+    countryEvents.push(event);
+    day.countries.set(event.countryCode, countryEvents);
+    days.set(key, day);
+  }
+
+  return Array.from(days.entries())
+    .sort(([, a], [, b]) => {
+      const difference = a.date.getTime() - b.date.getTime();
+      return descending ? -difference : difference;
+    })
+    .map(([key, day]) => ({
+      key,
+      label: new Intl.DateTimeFormat("he-IL", {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+      }).format(day.date),
+      countries: Array.from(day.countries.entries()).map(([code, countryEvents]) => ({
+        code,
+        label: COUNTRY_LABELS[code] ?? code,
+        events: countryEvents,
+      })),
+    }));
+}
+
 function EventRow({ event, isUpcoming }: { event: EconomicCalendarEvent, isUpcoming: boolean }) {
   const isBetter = event.result === "better";
   const isWorse = event.result === "worse";
@@ -136,6 +185,35 @@ export function EconomicCalendar() {
   const hasRecent = filteredRecent.length > 0;
   const hasUpcoming = filteredUpcoming.length > 0;
   const hasAny = hasRecent || hasUpcoming;
+  const recentByDay = useMemo(() => groupEventsByDay(filteredRecent, true), [filteredRecent]);
+  const upcomingByDay = useMemo(() => groupEventsByDay(filteredUpcoming), [filteredUpcoming]);
+
+  const renderDayGroups = (groups: DayGroup[], isUpcoming: boolean) => (
+    <div className="flex flex-col">
+      {groups.map((day) => (
+        <div key={day.key} className="border-b border-border/30 last:border-b-0">
+          <div
+            className="px-5 py-2.5 bg-background border-b border-border/30 flex items-center gap-2"
+            data-testid={`calendar-day-${day.key}`}
+          >
+            <CalendarIcon className="w-3.5 h-3.5 text-primary" />
+            <h4 className="text-sm font-bold text-foreground capitalize">{day.label}</h4>
+          </div>
+          {day.countries.map((country) => (
+            <div key={`${day.key}-${country.code}`}>
+              <div className="px-5 py-1.5 bg-muted/20 flex items-center gap-2 border-b border-border/20">
+                <CountryBadge code={country.code} />
+                <span className="text-[11px] font-semibold text-muted-foreground">{country.label}</span>
+              </div>
+              {country.events.map((event) => (
+                <EventRow key={`${isUpcoming ? "upcoming" : "recent"}-${event.id}`} event={event} isUpcoming={isUpcoming} />
+              ))}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
 
   return (
     <Card className="bg-card border-border overflow-hidden flex flex-col w-full shadow-sm" data-testid="economic-calendar">
@@ -296,11 +374,7 @@ export function EconomicCalendar() {
                     פורסמו לאחרונה
                   </h3>
                 </div>
-                <div className="flex flex-col">
-                  {filteredRecent.map(event => (
-                    <EventRow key={`recent-${event.id}`} event={event} isUpcoming={false} />
-                  ))}
-                </div>
+                {renderDayGroups(recentByDay, false)}
               </div>
             )}
 
@@ -312,11 +386,7 @@ export function EconomicCalendar() {
                     אירועים קרובים
                   </h3>
                 </div>
-                <div className="flex flex-col">
-                  {filteredUpcoming.map(event => (
-                    <EventRow key={`upcoming-${event.id}`} event={event} isUpcoming={true} />
-                  ))}
-                </div>
+                {renderDayGroups(upcomingByDay, true)}
               </div>
             )}
             
