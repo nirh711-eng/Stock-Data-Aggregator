@@ -93,22 +93,22 @@ const SECTOR_TICKERS: Record<string, string[]> = {
     "AMGN","GILD","CVS","CI","ISRG","BSX","MDT","ELV","HCA","SYK",
     "BIIB","VRTX","REGN","MRNA","ZBH","DXCM","IDXX","WST","IQV","MCK",
     // Mid cap
-    "HIMS","TDOC","ACCD","PHR","DOCS","GDRX","AMWL","NVCR","ALKS","RARE",
-    "ARWR","KRYS","ACAD","AXSM","PRGO","FOLD","APLS","INVA","TARS","PTGX",
+    "HIMS","TDOC","GMED","PHR","DOCS","GDRX","AMWL","NVCR","ALKS","RARE",
+    "ARWR","KRYS","ACAD","AXSM","PRGO","TNDM","CYTK","INVA","TARS","PTGX",
     // Radar
-    "AKRO","KYMR","ACER","VNDA","PNTM","ACHC","MTEX","TNXP","ANAB","ASRT",
+    "RXRX","KYMR","EXEL","VNDA","XENE","ACHC","MTEX","TNXP","ANAB","MIRM",
     "NVAX","OCGN","NVTA","GRPH","RCUS","IMVT","DVAX","CRVS","AGIO","FATE",
   ],
   "Financial Services": [
     // Large cap
     "BRK-B","JPM","V","MA","BAC","WFC","GS","MS","AXP","BLK",
     "SCHW","CB","MET","PGR","C","USB","TFC","SPGI","CME","ICE",
-    "COF","BK","STT","PNC","TRV","AIG","AON","MMC","MSCI","MCO",
+    "COF","CBOE","STT","PNC","TRV","AIG","AON","AFL","MSCI","MCO",
     // Mid cap
-    "UPST","AFRM","SOFI","LC","OPEN","PFSI","NRDS","ENVA","WRLD","CACC",
-    "CURO","TREE","LPRO","MGLN","HTLF","ABCB","NCBS","BCAL","FBIZ","PRAA",
+    "UPST","AFRM","SOFI","ALLY","OPEN","PFSI","NRDS","ENVA","WRLD","CACC",
+    "RKT","TREE","ONB","FHN","ZION","ABCB","OZK","BCAL","FBIZ","PRAA",
     // Radar
-    "EZCORP","COOP","SIGI","NRIM","NIC","SBFG","UFCS","WSFS","CFBK","TBNK",
+    "PIPR","FDS","SIGI","NRIM","NIC","SBFG","UFCS","WSFS","CFBK","WAL",
     "MVBF","HONE","BSVN","CZFS","CHMG","ESSA","FFIC","GFED","HARL","LKFN",
   ],
   "Energy": [
@@ -126,24 +126,24 @@ const SECTOR_TICKERS: Record<string, string[]> = {
     // Large cap
     "AMZN","TSLA","HD","MCD","NKE","SBUX","LOW","TJX","CMG","GM",
     "F","ABNB","BKNG","MAR","HLT","YUM","DRI","EBAY","ETSY","ROST",
-    "ORLY","AZO","ULTA","CVNA","NVR","PHM","DHI","LEN","TOL","MDC",
+    "ORLY","AZO","ULTA","CVNA","NVR","PHM","DHI","LEN","TOL","MTH",
     // Mid cap
-    "VSCO","LESL","ODP","LOVE","THO","PATK","GOED","PRKS","KTB","CARG",
-    "SBH","CURB","LZB","KIRK","ETD","JOUT","CULP","GASS","BCOR","RCII",
+    "BURL","LESL","WSM","LOVE","THO","PATK","RH","PRKS","KTB","CARG",
+    "SBH","CURB","LZB","FIVE","ETD","JOUT","CULP","GASS","BCOR","CAVA",
     // Radar
-    "EXPR","GCO","BOOT","POWW","BNED","CONN","LAUR","VVPR","HSON","QURE",
+    "BIRK","GCO","BOOT","POWW","BNED","ANF","LAUR","DECK","GPC","QURE",
     "PLCE","CATO","CHICO","DXLG","TLYS","KOSS","FOSL","CPRI","KSS","PRTY",
   ],
   "Consumer Defensive": [
     // Large cap
     "WMT","PG","COST","KO","PEP","PM","MO","MDLZ","CL","GIS",
-    "HSY","CPB","K","CHD","CLX","CAG","HRL","MKC","TSN","SJM",
-    "KHC","STZ","TAP","BF-B","CELH","MNST","KDP","COKE","FLO","THS",
+    "HSY","CPB","TGT","CHD","CLX","CAG","HRL","MKC","TSN","SJM",
+    "KHC","STZ","TAP","BF-B","CELH","MNST","KDP","COKE","FLO","KR",
     // Mid cap
-    "CALM","LANC","SENEA","JJSF","MGPI","DENN","LWAY","AGRO","CVGW","IPAR",
+    "CALM","SYY","SENEA","JJSF","MGPI","USFD","LWAY","AGRO","ELF","IPAR",
     "ANDE","HLLY","JBSS","FRPT","VLGEA","PTLO","SMPL","HAIN","UNFI","SFM",
     // Radar
-    "MGPI","IOSP","NATR","MGLN","EDBL","BRFS","CENT","PZZA","JACK","DIN",
+    "MGPI","IOSP","NATR","OLLI","EDBL","CHEF","CENT","PZZA","JACK","DIN",
     "DINE","FAT","HABT","TXRH","EAT","BLMN","NATH","LOCO","PBPB","UFPI",
   ],
   "Industrials": [
@@ -153,21 +153,21 @@ const SECTOR_TICKERS: Record<string, string[]> = {
     "FDX","NSC","UNP","CSX","WAB","EXPD","CHRW","GWW","FAST","ODFL",
     // Mid cap
     "HXL","TREX","MATX","GATX","GTES","TRN","CW","DXPE","AZZ","CRS",
-    "MTRN","NVEE","POWL","KFRC","GNSS","XPO","JBHT","SAIA","LSTR","ARCB",
+    "MTRN","PWR","POWL","KFRC","GNSS","XPO","JBHT","SAIA","LSTR","ARCB",
     // Radar
-    "CTOS","HLVX","PGTI","TILE","APOG","MFAC","ARIS","GENC","LMB","HTLD",
+    "CTOS","J","FIX","TILE","APOG","ROAD","ARIS","GENC","LMB","HTLD",
     "MRTN","WERN","HUBG","ECHO","FWRD","UHAL","ATRI","PRIM","MYRG","STRL",
   ],
   "Communication Services": [
     // Large cap
-    "GOOGL","META","NFLX","CMCSA","DIS","T","VZ","CHTR","TMUS","EA",
-    "TTWO","WBD","FOXA","PARA","IAC","ROKU","SPOT","PINS","SNAP","MTCH",
+    "GOOGL","META","NFLX","CMCSA","DIS","T","VZ","CHTR","TMUS","PLTK",
+    "TTWO","WBD","FOXA","PARA","BMBL","ROKU","SPOT","PINS","SNAP","MTCH",
     // Mid cap
     "TKO","NWSA","AMCX","YELP","ANGI","GENI","ZETA","DV","MGNI","PERI",
     "IDT","ITRN","SIRI","LBRDA","ZM","RBLX","U","LYFT","UBER","DASH",
     // Radar
-    "IHRT","GCI","LUMN","CTT","KGLA","JMIA","SATS","ATNI","IDT","ACTG",
-    "QUAD","MNI","NXST","SBGI","GTN","SSP","FUTU","MOMO","DOYU","HUYA",
+    "IHRT","NYT","LUMN","IMAX","SHEN","JMIA","LIVN","ATNI","IDT","ACTG",
+    "QUAD","MCS","NXST","SBGI","GTN","SSP","FUTU","MOMO","DOYU","HUYA",
   ],
   "Real Estate": [
     // Large cap
@@ -175,10 +175,10 @@ const SECTOR_TICKERS: Record<string, string[]> = {
     "WELL","VTR","EQR","AVB","ARE","BXP","KIM","MAA","CPT","NNN",
     // Mid cap
     "WPC","STAG","IRT","TRNO","COLD","IIPR","LXP","GTY","GOOD","UNIT",
-    "ALEX","ROIC","PLYM","UHT","CHCT","NXRT","INN","CLPR","MNR","GMRE",
+    "HST","ESS","ELME","UHT","CHCT","NXRT","INN","CLPR","MNR","HIW",
     // Radar
-    "VRE","NXRT","SGRY","SAFE","ONNI","REXR","IIIV","GOOD","VICI","SVC",
-    "APLE","SOHO","CLDT","AHREIT","BRSP","FSP","VNO","SLG","OFC","DEA",
+    "PEB","NXRT","SGRY","SAFE","BDN","REXR","IIIV","GOOD","VICI","SVC",
+    "APLE","KRG","CLDT","JBGS","BRSP","FSP","VNO","SLG","PK","DEA",
   ],
   "Basic Materials": [
     // Large cap
@@ -186,21 +186,21 @@ const SECTOR_TICKERS: Record<string, string[]> = {
     "MOS","CF","IFF","FMC","PPG","ECL","DD","DOW","EMN","HUN",
     // Mid cap
     "NGVT","KALU","ATI","CMC","CRS","MTRN","IOSP","SXC","KRO","TROX",
-    "RYAM","ASH","ASIX","CCK","SEE","PKG","IP","WRK","AVY","SON",
+    "RYAM","ASH","ASIX","CCK","RGLD","PKG","IP","AMCR","AVY","SON",
     // Radar
-    "GEF","SLGN","BALL","OI","BMS","GPK","CLW","MERC","HWKN","KWR",
-    "GMET","OMG","KOP","UAMY","USAK","CSTM","SXC","ZEUS","IIIN","CENX",
+    "GEF","SLGN","BALL","OI","STLD","GPK","CLW","MERC","HWKN","KWR",
+    "GMET","OMG","KOP","UAMY","LYB","CSTM","SXC","SCCO","IIIN","CENX",
   ],
   "Utilities": [
     // Large cap
     "NEE","DUK","SO","D","AEP","EXC","SRE","XEL","ES","WEC",
     "ED","PPL","AEE","FE","CNP","LNT","EVRG","NI","OGE","PNW",
     // Mid cap
-    "AWK","CMS","DTE","ETR","EIX","PCG","PEG","MGEE","ALLETE","AWR",
-    "SJW","MSEX","CWCO","UTL","ARTNA","YORW","LABL","CTWS","KINS","OTTR",
+    "AWK","CMS","DTE","ETR","EIX","PCG","PEG","MGEE","ATO","AWR",
+    "IDA","MSEX","CWCO","UTL","ARTNA","YORW","POR","AVA","KINS","OTTR",
     // Radar
-    "CWST","NJR","NFG","SR","AGR","GAS","GOOS","ARLO","BWEN","PHX",
-    "CEQP","USPH","NGAS","MMLP","MEMP","FCPT","SPTN","WATT","AMTD","REGI",
+    "CWST","NJR","NFG","SR","NWN","GAS","GOOS","ARLO","BWEN","BKH",
+    "CWEN","USPH","NGAS","MMLP","MEMP","FCPT","AES","WATT","AMTD","ORA",
   ],
 };
 
@@ -327,7 +327,12 @@ router.get("/sectors/screen", async (req, res) => {
       stocks,
       cachedAt: new Date().toISOString(),
     };
-    setCached(cacheKey, result);
+    // Never cache an incomplete provider response. A transient outage must be
+    // retried on the next refresh so the availability tracker can distinguish
+    // a one-off failure from a persistent symbol failure.
+    if (result.complete) {
+      setCached(cacheKey, result);
+    }
     res.json(result);
   } catch (err) {
     req.log?.error({ err }, "Sector screen failed");

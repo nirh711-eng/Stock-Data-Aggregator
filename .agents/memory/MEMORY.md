@@ -6,3 +6,4 @@
 - [Safe article URL fetching](safe-article-url-fetching.md) — Metadata fetches pin a validated public DNS address per request and must recheck each redirect.
 - [Preference sync semantics](preference-sync-semantics.md) — local data merges once on sign-in; subsequent edits are atomic user-scoped operations.
 - [Workspace dependency links](workspace-dependency-links.md) — declared workspace packages can be absent from artifact node_modules, blocking builds independently of feature changes.
+- [Development schema sync](development-schema-sync.md) — a committed schema can still be absent from the dev database, silently disabling availability-history persistence.
