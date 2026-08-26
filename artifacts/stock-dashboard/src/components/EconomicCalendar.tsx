@@ -1,7 +1,7 @@
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useGetEconomicCalendar, getGetEconomicCalendarQueryKey } from "@workspace/api-client-react";
-import { format, isToday, isTomorrow, isYesterday } from "date-fns";
-import { ExternalLink, Calendar as CalendarIcon, Info, RefreshCw, Star, AlertCircle, Clock } from "lucide-react";
+import { addWeeks, endOfWeek, format, isToday, isTomorrow, isYesterday, startOfWeek } from "date-fns";
+import { ExternalLink, Calendar as CalendarIcon, Info, RefreshCw, Star, AlertCircle, ChevronLeft, ChevronRight, Clock } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -79,6 +79,12 @@ function groupEventsByDay(events: EconomicCalendarEvent[], descending = false): 
     }));
 }
 
+function formatWeekRange(start: Date, end: Date) {
+  const startLabel = new Intl.DateTimeFormat("he-IL", { day: "numeric", month: "short" }).format(start);
+  const endLabel = new Intl.DateTimeFormat("he-IL", { day: "numeric", month: "short", year: "numeric" }).format(end);
+  return `${startLabel} – ${endLabel}`;
+}
+
 function EventRow({ event, isUpcoming }: { event: EconomicCalendarEvent, isUpcoming: boolean }) {
   const isBetter = event.result === "better";
   const isWorse = event.result === "worse";
@@ -149,8 +155,11 @@ function EventRow({ event, isUpcoming }: { event: EconomicCalendarEvent, isUpcom
 }
 
 export function EconomicCalendar() {
-  const [countryFilter, setCountryFilter] = useState<"ALL" | "US" | "IL">("ALL");
+  const [countryFilter, setCountryFilter] = useState<"US" | "IL">("US");
   const [importanceFilter, setImportanceFilter] = useState<"ALL" | "HIGH" | "MEDIUM">("ALL");
+  const [weekOffset, setWeekOffset] = useState<0 | 1>(0);
+  const [selectedView, setSelectedView] = useState("summary");
+  const [currentDate, setCurrentDate] = useState(() => new Date());
 
   const { data, isLoading, isError, refetch, isFetching } = useGetEconomicCalendar({
     query: {
@@ -160,35 +169,56 @@ export function EconomicCalendar() {
     }
   });
 
-  const filteredRecent = useMemo(() => {
-    if (!data?.recent) return [];
-    return data.recent.filter(event => {
-      if (countryFilter === "US" && event.countryCode !== "US") return false;
-      if (countryFilter === "IL" && event.countryCode !== "IL") return false;
-      if (importanceFilter === "HIGH" && event.importance < 3) return false;
-      if (importanceFilter === "MEDIUM" && event.importance < 2) return false;
-      return true;
+  useEffect(() => {
+    const nextDay = new Date(currentDate);
+    nextDay.setHours(24, 0, 1, 0);
+    const timeout = window.setTimeout(() => setCurrentDate(new Date()), nextDay.getTime() - Date.now());
+    return () => window.clearTimeout(timeout);
+  }, [currentDate]);
+
+  const weekBounds = useMemo(() => {
+    const weekStart = startOfWeek(addWeeks(currentDate, weekOffset), { weekStartsOn: 0 });
+    return { start: weekStart, end: endOfWeek(weekStart, { weekStartsOn: 0 }) };
+  }, [currentDate, weekOffset]);
+
+  const weekEvents = useMemo(() => {
+    const events = [...(data?.recent ?? []), ...(data?.upcoming ?? [])]
+      .filter(event => event.countryCode === countryFilter)
+      .filter(event => importanceFilter === "ALL" || (importanceFilter === "HIGH" ? event.importance === 3 : event.importance >= 2))
+      .filter(event => {
+        const timestamp = new Date(event.dateTime).getTime();
+        return timestamp >= weekBounds.start.getTime() && timestamp <= weekBounds.end.getTime();
+      })
+      .sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
+    return events;
+  }, [data, countryFilter, importanceFilter, weekBounds]);
+
+  const weekDays = useMemo(() => {
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(weekBounds.start);
+      date.setDate(date.getDate() + index);
+      const key = format(date, "yyyy-MM-dd");
+      return {
+        key,
+        date,
+        label: new Intl.DateTimeFormat("he-IL", { weekday: "short", day: "numeric", month: "short" }).format(date),
+        count: weekEvents.filter(event => format(new Date(event.dateTime), "yyyy-MM-dd") === key).length,
+      };
     });
-  }, [data, countryFilter, importanceFilter]);
+  }, [weekBounds, weekEvents]);
 
-  const filteredUpcoming = useMemo(() => {
-    if (!data?.upcoming) return [];
-    return data.upcoming.filter(event => {
-      if (countryFilter === "US" && event.countryCode !== "US") return false;
-      if (countryFilter === "IL" && event.countryCode !== "IL") return false;
-      if (importanceFilter === "HIGH" && event.importance < 3) return false;
-      if (importanceFilter === "MEDIUM" && event.importance < 2) return false;
-      return true;
-    });
-  }, [data, countryFilter, importanceFilter]);
+  const summaryGroups = useMemo(() => groupEventsByDay(weekEvents), [weekEvents]);
+  const selectedDayEvents = useMemo(
+    () => selectedView === "summary"
+      ? weekEvents
+      : weekEvents.filter(event => format(new Date(event.dateTime), "yyyy-MM-dd") === selectedView),
+    [selectedView, weekEvents],
+  );
+  const selectedDayGroups = useMemo(() => groupEventsByDay(selectedDayEvents), [selectedDayEvents]);
+  const hasAny = weekEvents.length > 0;
+  const hasVisibleEvents = selectedView === "summary" ? hasAny : selectedDayEvents.length > 0;
 
-  const hasRecent = filteredRecent.length > 0;
-  const hasUpcoming = filteredUpcoming.length > 0;
-  const hasAny = hasRecent || hasUpcoming;
-  const recentByDay = useMemo(() => groupEventsByDay(filteredRecent, true), [filteredRecent]);
-  const upcomingByDay = useMemo(() => groupEventsByDay(filteredUpcoming), [filteredUpcoming]);
-
-  const renderDayGroups = (groups: DayGroup[], isUpcoming: boolean) => (
+  const renderDayGroups = (groups: DayGroup[]) => (
     <div className="flex flex-col">
       {groups.map((day) => (
         <div key={day.key} className="border-b border-border/30 last:border-b-0">
@@ -206,7 +236,7 @@ export function EconomicCalendar() {
                 <span className="text-[11px] font-semibold text-muted-foreground">{country.label}</span>
               </div>
               {country.events.map((event) => (
-                <EventRow key={`${isUpcoming ? "upcoming" : "recent"}-${event.id}`} event={event} isUpcoming={isUpcoming} />
+                <EventRow key={`${day.key}-${event.id}`} event={event} isUpcoming={new Date(event.dateTime).getTime() > Date.now()} />
               ))}
             </div>
           ))}
@@ -214,6 +244,16 @@ export function EconomicCalendar() {
       ))}
     </div>
   );
+
+  const selectCountry = (country: "US" | "IL") => {
+    setCountryFilter(country);
+    setSelectedView("summary");
+  };
+
+  const selectWeek = (offset: 0 | 1) => {
+    setWeekOffset(offset);
+    setSelectedView("summary");
+  };
 
   return (
     <Card className="bg-card border-border overflow-hidden flex flex-col w-full shadow-sm" data-testid="economic-calendar">
@@ -244,23 +284,14 @@ export function EconomicCalendar() {
           </Button>
         </div>
 
-        {/* Filters */}
+        {/* Country, week and importance controls */}
         {!isError && (
-          <div className="flex flex-wrap items-center gap-3 mt-5 relative z-10">
+          <div className="flex flex-col gap-3 mt-5 relative z-10">
             <div className="flex items-center bg-muted/40 p-1 rounded-md border border-border/50">
-              <Button 
-                variant={countryFilter === 'ALL' ? 'secondary' : 'ghost'} 
-                size="sm" 
-                onClick={() => setCountryFilter('ALL')}
-                className={`h-7 px-3 text-xs font-medium rounded-sm ${countryFilter === 'ALL' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                data-testid="btn-filter-country-all"
-              >
-                הכל
-              </Button>
               <Button 
                 variant={countryFilter === 'US' ? 'secondary' : 'ghost'} 
                 size="sm" 
-                onClick={() => setCountryFilter('US')}
+                onClick={() => selectCountry('US')}
                 className={`h-7 px-3 text-xs font-medium rounded-sm ${countryFilter === 'US' ? 'bg-background shadow-sm text-blue-600 dark:text-blue-400' : 'text-muted-foreground hover:text-foreground'}`}
                 data-testid="btn-filter-country-us"
               >
@@ -269,7 +300,7 @@ export function EconomicCalendar() {
               <Button 
                 variant={countryFilter === 'IL' ? 'secondary' : 'ghost'} 
                 size="sm" 
-                onClick={() => setCountryFilter('IL')}
+                onClick={() => selectCountry('IL')}
                 className={`h-7 px-3 text-xs font-medium rounded-sm ${countryFilter === 'IL' ? 'bg-background shadow-sm text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground hover:text-foreground'}`}
                 data-testid="btn-filter-country-il"
               >
@@ -277,35 +308,67 @@ export function EconomicCalendar() {
               </Button>
             </div>
 
-            <div className="flex items-center bg-muted/40 p-1 rounded-md border border-border/50">
-              <Button 
-                variant={importanceFilter === 'ALL' ? 'secondary' : 'ghost'} 
-                size="sm" 
-                onClick={() => setImportanceFilter('ALL')}
-                className={`h-7 px-3 text-xs font-medium rounded-sm ${importanceFilter === 'ALL' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                data-testid="btn-filter-importance-all"
-              >
-                הכל
-              </Button>
-              <Button 
-                variant={importanceFilter === 'MEDIUM' ? 'secondary' : 'ghost'} 
-                size="sm" 
-                onClick={() => setImportanceFilter('MEDIUM')}
-                className={`h-7 px-3 text-xs font-medium rounded-sm ${importanceFilter === 'MEDIUM' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                data-testid="btn-filter-importance-medium"
-              >
-                בינונית+
-              </Button>
-              <Button 
-                variant={importanceFilter === 'HIGH' ? 'secondary' : 'ghost'} 
-                size="sm" 
-                onClick={() => setImportanceFilter('HIGH')}
-                className={`h-7 px-3 text-xs font-medium rounded-sm flex items-center gap-1.5 ${importanceFilter === 'HIGH' ? 'bg-background shadow-sm text-amber-600 dark:text-amber-500' : 'text-muted-foreground hover:text-foreground'}`}
-                data-testid="btn-filter-importance-high"
-              >
-                גבוהה בלבד
-                <Star className="w-2.5 h-2.5 fill-current" />
-              </Button>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1"
+                  onClick={() => selectWeek(0)}
+                  disabled={weekOffset === 0}
+                  data-testid="btn-week-current"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                  השבוע
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1"
+                  onClick={() => selectWeek(1)}
+                  disabled={weekOffset === 1}
+                  data-testid="btn-week-next"
+                >
+                  שבוע הבא
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+              <span className="text-xs font-medium text-muted-foreground" data-testid="text-selected-week">
+                {formatWeekRange(weekBounds.start, weekBounds.end)}
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center bg-muted/40 p-1 rounded-md border border-border/50">
+                <Button
+                  variant={importanceFilter === 'ALL' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  onClick={() => { setImportanceFilter('ALL'); setSelectedView('summary'); }}
+                  className={`h-7 px-3 text-xs font-medium rounded-sm ${importanceFilter === 'ALL' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                  data-testid="btn-filter-importance-all"
+                >
+                  הכל
+                </Button>
+                <Button
+                  variant={importanceFilter === 'MEDIUM' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  onClick={() => { setImportanceFilter('MEDIUM'); setSelectedView('summary'); }}
+                  className={`h-7 px-3 text-xs font-medium rounded-sm ${importanceFilter === 'MEDIUM' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                  data-testid="btn-filter-importance-medium"
+                >
+                  בינונית+
+                </Button>
+                <Button
+                  variant={importanceFilter === 'HIGH' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  onClick={() => { setImportanceFilter('HIGH'); setSelectedView('summary'); }}
+                  className={`h-7 px-3 text-xs font-medium rounded-sm flex items-center gap-1.5 ${importanceFilter === 'HIGH' ? 'bg-background shadow-sm text-amber-600 dark:text-amber-500' : 'text-muted-foreground hover:text-foreground'}`}
+                  data-testid="btn-filter-importance-high"
+                >
+                  גבוהה בלבד
+                  <Star className="w-2.5 h-2.5 fill-current" />
+                </Button>
+              </div>
             </div>
           </div>
         )}
@@ -351,45 +414,75 @@ export function EconomicCalendar() {
               נסה שוב
             </Button>
           </div>
-        ) : !hasAny ? (
+        ) : (
+          <div className="flex flex-col">
+            <div className="px-4 pt-4">
+              <div
+                aria-label="בחירת תצוגת היומן"
+                className="flex gap-1 overflow-x-auto border-b border-border/50 pb-px scrollbar-thin"
+                data-testid="calendar-view-tabs"
+              >
+                <button
+                  type="button"
+                  aria-pressed={selectedView === "summary"}
+                  onClick={() => setSelectedView("summary")}
+                  className={`shrink-0 px-4 py-2.5 text-xs font-bold border-b-2 transition-colors ${selectedView === "summary" ? "text-primary border-primary" : "text-muted-foreground border-transparent hover:text-foreground"}`}
+                  data-testid="calendar-tab-summary"
+                >
+                  סיכום שבועי
+                  <span className="mr-1.5 text-[10px] opacity-70">({weekEvents.length})</span>
+                </button>
+                {weekDays.map((day) => (
+                  <button
+                    key={day.key}
+                    type="button"
+                    aria-pressed={selectedView === day.key}
+                    onClick={() => setSelectedView(day.key)}
+                    className={`shrink-0 px-3 py-2.5 text-xs font-medium border-b-2 transition-colors ${selectedView === day.key ? "text-primary border-primary" : "text-muted-foreground border-transparent hover:text-foreground"}`}
+                    data-testid={`calendar-tab-day-${day.key}`}
+                  >
+                    {day.label}
+                    <span className={`mr-1.5 text-[10px] ${day.count > 0 ? "text-primary font-bold" : "opacity-50"}`}>{day.count}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div
+              className="flex flex-col"
+              role="region"
+              aria-live="polite"
+              aria-label={selectedView === "summary" ? "סיכום אירועי השבוע" : "אירועי היום שנבחר"}
+              data-testid="calendar-view-panel"
+            >
+            {!hasVisibleEvents ? (
           <div className="py-20 flex flex-col items-center justify-center text-center space-y-4 px-4" data-testid="empty-state-calendar">
             <div className="w-12 h-12 bg-muted rounded-full flex items-center justify-center">
               <CalendarIcon className="w-5 h-5 text-muted-foreground/60" />
             </div>
             <div>
-              <h3 className="font-semibold text-foreground">אין אירועים מתאימים</h3>
-              <p className="text-sm text-muted-foreground mt-1">לא נמצאו אירועי מאקרו התואמים לסינון שבחרת.</p>
+              <h3 className="font-semibold text-foreground">
+                {selectedView === "summary" ? "אין אירועים השבוע" : "אין אירועים ביום הזה"}
+              </h3>
+              <p className="text-sm text-muted-foreground mt-1">לא נמצאו אירועי מאקרו התואמים למדינה, לשבוע ולסינון שבחרת.</p>
             </div>
-            <Button variant="ghost" size="sm" onClick={() => { setCountryFilter('ALL'); setImportanceFilter('ALL'); }} className="text-primary hover:text-primary/80" data-testid="btn-clear-filters">
+            <Button variant="ghost" size="sm" onClick={() => { setImportanceFilter('ALL'); setSelectedView('summary'); }} className="text-primary hover:text-primary/80" data-testid="btn-clear-filters">
               נקה סינונים
             </Button>
           </div>
-        ) : (
-          <div className="flex flex-col">
-            {hasRecent && (
-              <div className="pb-4">
-                <div className="bg-muted/30 px-5 py-2 border-b border-border/40 sticky top-0 z-10 backdrop-blur-md">
-                  <h3 className="text-[11px] font-bold text-muted-foreground tracking-wider uppercase flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5" />
-                    פורסמו לאחרונה
-                  </h3>
-                </div>
-                {renderDayGroups(recentByDay, false)}
+            ) : (
+              <div className="pt-3">
+                {selectedView === "summary" && (
+                  <div className="px-5 py-2 bg-muted/30 border-y border-border/40">
+                    <h3 className="text-[11px] font-bold text-primary/80 tracking-wider uppercase flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5" />
+                      סיכום אירועי השבוע — {COUNTRY_LABELS[countryFilter]}
+                    </h3>
+                  </div>
+                )}
+                {renderDayGroups(selectedView === "summary" ? summaryGroups : selectedDayGroups)}
               </div>
             )}
-
-            {hasUpcoming && (
-              <div className="pb-2">
-                <div className="bg-muted/30 px-5 py-2 border-y border-border/40 sticky top-0 z-10 backdrop-blur-md">
-                  <h3 className="text-[11px] font-bold text-primary/80 tracking-wider uppercase flex items-center gap-1.5">
-                    <CalendarIcon className="w-3.5 h-3.5" />
-                    אירועים קרובים
-                  </h3>
-                </div>
-                {renderDayGroups(upcomingByDay, true)}
-              </div>
-            )}
-            
+            </div>
           </div>
         )}
         {data && (
