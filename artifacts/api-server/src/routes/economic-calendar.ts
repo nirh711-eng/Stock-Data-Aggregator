@@ -5,8 +5,10 @@ import { GetEconomicCalendarResponse } from "@workspace/api-zod";
 const INVESTING_CALENDAR_URL = "https://www.investing.com/economic-calendar/Service/getCalendarFilteredData";
 const INVESTING_CALENDAR_PAGE = "https://www.investing.com/economic-calendar";
 const INVESTING_OCCURRENCES_URL = "https://endpoints.investing.com/pd-instruments/v1/calendars/economic/events/occurrences";
-const INVESTING_CALENDAR_WIDGET_URL = "https://sslecal2.investing.com/";
-const CACHE_TTL_MS = 5 * 60 * 1000;
+const APIFY_ECONOMIC_CALENDAR_ACTOR = "solidcode~economic-calendar-data-scraper";
+const APIFY_TOKEN = process.env.APIFY_API_TOKEN ?? "";
+const DIRECT_CACHE_TTL_MS = 5 * 60 * 1000;
+const APIFY_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
 type CountryConfig = {
   id: string;
@@ -45,6 +47,7 @@ type EconomicCalendarData = {
 };
 
 let cache: { expiresAt: number; data: EconomicCalendarData } | null = null;
+let apifyCache: { range: string; expiresAt: number; events: CalendarEvent[] } | null = null;
 
 function htmlDecode(value: string): string {
   return value
@@ -130,57 +133,6 @@ function parseCalendarHtml(html: string, country: CountryConfig): CalendarEvent[
   return events;
 }
 
-function parseWidgetDateTime(dayStartMs: number | null, time: string | null): string | null {
-  if (!dayStartMs || !time) return null;
-  const timeMatch = time.match(/(^|\s)(\d{1,2}):(\d{2})(?:\s|$)/);
-  if (!timeMatch) return null;
-
-  const date = new Date(dayStartMs);
-  date.setUTCHours(Number(timeMatch[2]), Number(timeMatch[3]), 0, 0);
-  return date.toISOString();
-}
-
-function parseCalendarWidgetHtml(html: string, country: CountryConfig): CalendarEvent[] {
-  const rows = html.match(/<tr\b[\s\S]*?<\/tr>/gi) ?? [];
-  const seen = new Set<string>();
-  const events: CalendarEvent[] = [];
-  let dayStartMs: number | null = null;
-
-  for (const row of rows) {
-    const dayStamp = row.match(/\bid="theDay(\d+)"/i)?.[1];
-    if (dayStamp) {
-      const value = Number(dayStamp);
-      dayStartMs = Number.isFinite(value) ? (value < 1_000_000_000_000 ? value * 1_000 : value) : null;
-    }
-
-    const id = row.match(/\sid="eventRowId_(\d+)"/i)?.[1] ?? null;
-    const titleMatch = row.match(/<td[^>]*class="[^"]*\bevent\b[^"]*"[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
-    const title = titleMatch ? stripHtml(titleMatch[2]) : null;
-    const dateTime = parseDateTime(getAttribute(row, "data-event-datetime"))
-      ?? parseWidgetDateTime(dayStartMs, getCell(row, "time"));
-    if (!id || !dateTime || !title || !titleMatch || seen.has(id)) continue;
-
-    seen.add(id);
-    const href = htmlDecode(titleMatch[1]);
-    events.push({
-      id,
-      dateTime,
-      country: country.name,
-      countryCode: country.code,
-      currency: getCell(row, "flagCur")?.split(/\s+/).pop() ?? (country.code === "US" ? "USD" : "ILS"),
-      importance: importanceFromRow(row),
-      title,
-      actual: getCell(row, "act"),
-      forecast: getCell(row, "fore"),
-      previous: getCell(row, "prev"),
-      result: resultFromRow(row),
-      eventUrl: href.startsWith("http") ? href : `https://www.investing.com${href}`,
-    });
-  }
-
-  return events;
-}
-
 function formatDate(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
@@ -240,26 +192,58 @@ function fetchCountryCalendar(country: CountryConfig, from: string, to: string):
   });
 }
 
-function fetchCurrentWeekWidgetCalendar(country: CountryConfig): Promise<CalendarEvent[]> {
-  return new Promise((resolve, reject) => {
-    const url = new URL(INVESTING_CALENDAR_WIDGET_URL);
-    url.searchParams.set("columns", "exc_flags,exc_currency,exc_importance,exc_actual,exc_forecast,exc_previous");
-    url.searchParams.set("features", "datepicker,timezone");
-    url.searchParams.set("countries", country.id);
-    url.searchParams.set("importance", "1,2,3");
-    url.searchParams.set("calType", "week");
-    url.searchParams.set("timeZone", "55"); // UTC, matching the main calendar response.
-    url.searchParams.set("lang", "1");
+type ApifyCalendarEvent = {
+  id?: number | string;
+  date?: string;
+  time?: string;
+  country?: string;
+  currency?: string | null;
+  importance?: "low" | "medium" | "high";
+  event?: string;
+  actual?: string | null;
+  forecast?: string | null;
+  previous?: string | null;
+  eventUrl?: string | null;
+};
 
-    const request = https.get(
+function parseApifyDateTime(date: string | undefined, time: string | undefined): string | null {
+  const dateMatch = date?.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!dateMatch) return null;
+
+  const timeMatch = time?.match(/^(\d{1,2}):(\d{2})$/);
+  const hour = timeMatch ? Number(timeMatch[1]) : 0;
+  const minute = timeMatch ? Number(timeMatch[2]) : 0;
+  return new Date(Date.UTC(Number(dateMatch[1]), Number(dateMatch[2]) - 1, Number(dateMatch[3]), hour, minute)).toISOString();
+}
+
+function fetchApifyCalendar(fromDate: string, toDate: string): Promise<CalendarEvent[]> {
+  return new Promise((resolve, reject) => {
+    if (!APIFY_TOKEN) {
+      resolve([]);
+      return;
+    }
+
+    const url = new URL(`https://api.apify.com/v2/acts/${APIFY_ECONOMIC_CALENDAR_ACTOR}/run-sync-get-dataset-items`);
+    url.searchParams.set("token", APIFY_TOKEN);
+    url.searchParams.set("timeout", "120");
+    const body = JSON.stringify({
+      countries: COUNTRIES.map((country) => country.name.toLocaleLowerCase()),
+      fromDate,
+      toDate,
+      maxResults: 1000,
+    });
+
+    const request = https.request(
       url,
       {
+        method: "POST",
         headers: {
-          "User-Agent": "Mozilla/5.0 (compatible; StockPulse/1.0)",
-          Accept: "text/html, */*; q=0.01",
-          Referer: INVESTING_CALENDAR_PAGE,
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body),
+          Accept: "application/json",
+          "User-Agent": "StockPulse/1.0",
         },
-        timeout: 8_000,
+        timeout: 130_000,
       },
       (response) => {
         let raw = "";
@@ -267,16 +251,56 @@ function fetchCurrentWeekWidgetCalendar(country: CountryConfig): Promise<Calenda
         response.on("data", (chunk: string) => { raw += chunk; });
         response.on("end", () => {
           if ((response.statusCode ?? 500) >= 400) {
-            reject(new Error(`Investing.com calendar widget returned ${response.statusCode}`));
+            let details = "";
+            try {
+              const errorPayload = JSON.parse(raw) as { error?: { message?: string } };
+              details = errorPayload.error?.message ? `: ${errorPayload.error.message}` : "";
+            } catch {
+              // Status code alone is sufficient if Apify returns non-JSON.
+            }
+            reject(new Error(`Apify Investing calendar actor returned ${response.statusCode}${details}`));
             return;
           }
-          resolve(parseCalendarWidgetHtml(raw, country));
+          try {
+            const payload = JSON.parse(raw) as ApifyCalendarEvent[];
+            if (!Array.isArray(payload)) {
+              reject(new Error("Apify Investing calendar actor returned an invalid response"));
+              return;
+            }
+
+            const events = payload.flatMap((item) => {
+              const dateTime = parseApifyDateTime(item.date, item.time);
+              const country = COUNTRIES.find((candidate) =>
+                candidate.name.toLocaleLowerCase() === item.country?.trim().toLocaleLowerCase(),
+              );
+              if (!dateTime || !item.id || !item.event || !country) return [];
+              return [{
+                id: String(item.id),
+                dateTime,
+                country: country.name,
+                countryCode: country.code,
+                currency: item.currency ?? (country.code === "US" ? "USD" : "ILS"),
+                importance: item.importance === "high" ? 3 : item.importance === "medium" ? 2 : 1,
+                title: item.event,
+                actual: item.actual ?? null,
+                forecast: item.forecast ?? null,
+                previous: item.previous ?? null,
+                result: null,
+                eventUrl: item.eventUrl ?? INVESTING_CALENDAR_PAGE,
+              }] satisfies CalendarEvent[];
+            });
+            resolve(events);
+          } catch {
+            reject(new Error("Apify Investing calendar actor returned invalid JSON"));
+          }
         });
       },
     );
 
-    request.on("timeout", () => request.destroy(new Error("Investing.com calendar widget request timed out")));
+    request.on("timeout", () => request.destroy(new Error("Apify Investing calendar actor request timed out")));
     request.on("error", reject);
+    request.write(body);
+    request.end();
   });
 }
 
@@ -397,7 +421,13 @@ async function loadEconomicCalendar(): Promise<EconomicCalendarData> {
   const to = new Date(now);
   to.setUTCDate(to.getUTCDate() + 30);
 
-  const settled = await Promise.allSettled(
+  const currentWeekStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  currentWeekStart.setUTCDate(currentWeekStart.getUTCDate() - currentWeekStart.getUTCDay());
+  const nextWeekEnd = new Date(currentWeekStart);
+  nextWeekEnd.setUTCDate(nextWeekEnd.getUTCDate() + 13);
+  const apifyRange = `${formatDate(currentWeekStart)}:${formatDate(nextWeekEnd)}`;
+
+  const directCalendarPromise = Promise.allSettled(
     COUNTRIES.map((country) => {
       // Israeli macro releases are less frequent, so retain enough history to show the latest
       // official reading even when no release falls within the near-term calendar window.
@@ -407,18 +437,32 @@ async function loadEconomicCalendar(): Promise<EconomicCalendarData> {
     }),
   );
 
+  const apifyCalendarPromise: Promise<CalendarEvent[]> = apifyCache
+    && apifyCache.range === apifyRange
+    && apifyCache.expiresAt > Date.now()
+    ? Promise.resolve(apifyCache.events)
+    : APIFY_TOKEN
+      ? fetchApifyCalendar(formatDate(currentWeekStart), formatDate(nextWeekEnd))
+        .then((events) => {
+        if (events.length > 0) {
+          apifyCache = { range: apifyRange, expiresAt: Date.now() + APIFY_CACHE_TTL_MS, events };
+        }
+        return events;
+        })
+        .catch((error: unknown) => {
+          console.warn(
+            `[economic-calendar] Apify calendar retrieval failed: ${error instanceof Error ? error.message : "unknown error"}`,
+          );
+          return [];
+        })
+      : Promise.resolve([]);
+
+  const [settled, apifyEvents] = await Promise.all([directCalendarPromise, apifyCalendarPromise]);
   let unavailableCountries: string[] = [];
-  const events: CalendarEvent[] = [];
+  const events: CalendarEvent[] = [...apifyEvents];
   settled.forEach((result, index) => {
     if (result.status === "fulfilled") events.push(...result.value);
     else unavailableCountries.push(COUNTRIES[index].name);
-  });
-
-  const widgetSettled = await Promise.allSettled(
-    COUNTRIES.map((country) => fetchCurrentWeekWidgetCalendar(country)),
-  );
-  widgetSettled.forEach((result) => {
-    if (result.status === "fulfilled") events.push(...result.value);
   });
 
   const countriesWithNoEvents = COUNTRIES.filter((country) =>
@@ -447,6 +491,10 @@ async function loadEconomicCalendar(): Promise<EconomicCalendarData> {
     throw new Error("No calendar data was available from Investing.com");
   }
 
+  unavailableCountries = unavailableCountries.filter((country) =>
+    !events.some((event) => event.country === country),
+  );
+
   const nowMs = now.getTime();
   const sorted = [...new Map(events.map((event) => [`${event.countryCode}:${event.id}`, event])).values()]
     .sort((a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime());
@@ -459,7 +507,7 @@ async function loadEconomicCalendar(): Promise<EconomicCalendarData> {
     recent: sorted.filter((event) => new Date(event.dateTime).getTime() <= nowMs).reverse(),
     unavailableCountries,
   };
-  cache = { data, expiresAt: Date.now() + CACHE_TTL_MS };
+  cache = { data, expiresAt: Date.now() + DIRECT_CACHE_TTL_MS };
   return data;
 }
 

@@ -7,5 +7,5 @@
 - [Preference sync semantics](preference-sync-semantics.md) — local data merges once on sign-in; subsequent edits are atomic user-scoped operations.
 - [Workspace dependency links](workspace-dependency-links.md) — declared workspace packages can be absent from artifact node_modules, blocking builds independently of feature changes.
 - [Development schema sync](development-schema-sync.md) — a committed schema can still be absent from the dev database, silently disabling availability-history persistence.
-- [Investing calendar sourcing](investing-calendar-sourcing.md) — use Investing's calendar POST endpoint with a cached fallback; country coverage can be temporarily sparse.
+- [Investing calendar sourcing](investing-calendar-sourcing.md) — direct Investing POST can omit current-day rows; a cost-controlled Apify supplement provides the full list.
 - [OpenAPI codegen safety](openapi-codegen-safety.md) — Orval clears generated React client files before parsing; validate OpenAPI YAML before rerunning after failures.
