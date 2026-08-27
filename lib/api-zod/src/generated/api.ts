@@ -594,7 +594,7 @@ export const GetMarketDailyReportResponse = zod.object({
 });
 
 /**
- * Returns medium- and high-impact economic calendar events published by Investing.com, including recent results and upcoming consensus expectations.
+ * Returns economic calendar events published by Investing.com, including recent results and upcoming consensus expectations.
  * @summary Get important U.S. and Israeli economic releases from Investing.com
  */
 export const getEconomicCalendarResponseUpcomingItemImportanceMax = 3;

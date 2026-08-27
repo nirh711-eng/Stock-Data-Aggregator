@@ -299,7 +299,7 @@ paths:
       operationId: getEconomicCalendar
       tags: [market]
       summary: Get important U.S. and Israeli economic releases from Investing.com
-      description: Returns medium- and high-impact economic calendar events published by Investing.com, including recent results and upcoming consensus expectations.
+      description: Returns economic calendar events published by Investing.com, including recent results and upcoming consensus expectations.
       responses:
         "200":
           description: Economic calendar events

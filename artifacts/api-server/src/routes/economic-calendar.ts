@@ -144,9 +144,6 @@ function fetchCountryCalendar(country: CountryConfig, from: string, to: string):
     body.append("submitFilters", "1");
     body.append("limit_from", "0");
     body.append("country[]", country.id);
-    body.append("importance[]", "2");
-    body.append("importance[]", "3");
-
     const request = https.request(
       INVESTING_CALENDAR_URL,
       {
@@ -263,7 +260,6 @@ function fetchOccurrencesFallback(from: Date, to: Date): Promise<CalendarEvent[]
               const country = meta?.country_id ? targetCountries.get(meta.country_id) : undefined;
               if (!meta || !country || !occurrence.occurrence_id || !occurrence.occurrence_time || !meta.long_name) return [];
               const importance = meta.importance === "high" ? 3 : meta.importance === "medium" ? 2 : 1;
-              if (importance < 2) return [];
               const period = occurrence.reference_period ? ` (${occurrence.reference_period})` : "";
               return [{
                 id: String(occurrence.occurrence_id),
