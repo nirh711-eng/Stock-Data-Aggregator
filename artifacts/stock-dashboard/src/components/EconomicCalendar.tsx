@@ -111,7 +111,7 @@ function EventRow({ event, isUpcoming }: { event: EconomicCalendarEvent, isUpcom
           href={event.eventUrl} 
           target="_blank" 
           rel="noreferrer" 
-          className={`text-sm font-semibold truncate hover:text-primary transition-colors flex items-center gap-1.5 w-fit ${isHighImpact ? 'text-foreground' : 'text-foreground/90'}`}
+           className={`text-sm font-semibold whitespace-normal break-words leading-snug hover:text-primary transition-colors flex items-center gap-1.5 w-fit ${isHighImpact ? 'text-foreground' : 'text-foreground/90'}`}
           title={event.title}
           data-testid={`link-event-${event.id}`}
         >
@@ -454,14 +454,14 @@ export function EconomicCalendar() {
           </div>
             ) : (
               <div className="pt-3">
-                {selectedView === "summary" && (
-                  <div className="px-5 py-2 bg-muted/30 border-y border-border/40">
-                    <h3 className="text-[11px] font-bold text-primary/80 tracking-wider uppercase flex items-center gap-1.5">
-                      <Clock className="w-3.5 h-3.5" />
-                      {weekOffset === 0 ? "סיכום השבוע הנוכחי" : "סיכום שבוע קדימה"} — {COUNTRY_LABELS[countryFilter]} ({formatWeekRange(weekBounds.start, weekBounds.end)})
-                    </h3>
-                  </div>
-                )}
+                <div className="px-5 py-2 bg-muted/30 border-y border-border/40">
+                  <h3 className="text-[11px] font-bold text-primary/80 tracking-wider uppercase flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5" />
+                    {selectedView === "summary"
+                      ? `${weekOffset === 0 ? "סיכום השבוע הנוכחי" : "סיכום שבוע קדימה"} — ${COUNTRY_LABELS[countryFilter]} (${formatWeekRange(weekBounds.start, weekBounds.end)})`
+                      : `${weekDays.find((day) => day.key === selectedView)?.label ?? "היום שנבחר"} — ${COUNTRY_LABELS[countryFilter]} (${selectedDayEvents.length} אירועים)`}
+                  </h3>
+                </div>
                 {renderDayGroups(selectedView === "summary" ? summaryGroups : selectedDayGroups)}
               </div>
             )}
