@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useGetEconomicCalendar, getGetEconomicCalendarQueryKey } from "@workspace/api-client-react";
 import { addWeeks, endOfWeek, format, isToday, isTomorrow, isYesterday, startOfWeek } from "date-fns";
-import { ExternalLink, Calendar as CalendarIcon, Info, RefreshCw, Star, AlertCircle, ChevronLeft, ChevronRight, Clock } from "lucide-react";
+import { ExternalLink, Calendar as CalendarIcon, Info, RefreshCw, Star, AlertCircle, Clock } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -194,7 +194,7 @@ export function EconomicCalendar() {
   }, [data, countryFilter, importanceFilter, weekBounds]);
 
   const weekDays = useMemo(() => {
-    return Array.from({ length: 7 }, (_, index) => {
+    return Array.from({ length: 6 }, (_, index) => {
       const date = new Date(weekBounds.start);
       date.setDate(date.getDate() + index);
       const key = format(date, "yyyy-MM-dd");
@@ -284,9 +284,9 @@ export function EconomicCalendar() {
           </Button>
         </div>
 
-        {/* Country, week and importance controls */}
+         {/* Country selector */}
         {!isError && (
-          <div className="flex flex-col gap-3 mt-5 relative z-10">
+           <div className="flex flex-col gap-3 mt-5 relative z-10">
             <div className="flex items-center bg-muted/40 p-1 rounded-md border border-border/50">
               <Button 
                 variant={countryFilter === 'US' ? 'secondary' : 'ghost'} 
@@ -306,69 +306,6 @@ export function EconomicCalendar() {
               >
                 ישראל
               </Button>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center gap-1.5">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 gap-1"
-                  onClick={() => selectWeek(0)}
-                  disabled={weekOffset === 0}
-                  data-testid="btn-week-current"
-                >
-                  <ChevronRight className="w-3.5 h-3.5" />
-                  השבוע
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-8 gap-1"
-                  onClick={() => selectWeek(1)}
-                  disabled={weekOffset === 1}
-                  data-testid="btn-week-next"
-                >
-                  שבוע הבא
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                </Button>
-              </div>
-              <span className="text-xs font-medium text-muted-foreground" data-testid="text-selected-week">
-                {formatWeekRange(weekBounds.start, weekBounds.end)}
-              </span>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex items-center bg-muted/40 p-1 rounded-md border border-border/50">
-                <Button
-                  variant={importanceFilter === 'ALL' ? 'secondary' : 'ghost'}
-                  size="sm"
-                  onClick={() => { setImportanceFilter('ALL'); setSelectedView('summary'); }}
-                  className={`h-7 px-3 text-xs font-medium rounded-sm ${importanceFilter === 'ALL' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                  data-testid="btn-filter-importance-all"
-                >
-                  הכל
-                </Button>
-                <Button
-                  variant={importanceFilter === 'MEDIUM' ? 'secondary' : 'ghost'}
-                  size="sm"
-                  onClick={() => { setImportanceFilter('MEDIUM'); setSelectedView('summary'); }}
-                  className={`h-7 px-3 text-xs font-medium rounded-sm ${importanceFilter === 'MEDIUM' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                  data-testid="btn-filter-importance-medium"
-                >
-                  בינונית+
-                </Button>
-                <Button
-                  variant={importanceFilter === 'HIGH' ? 'secondary' : 'ghost'}
-                  size="sm"
-                  onClick={() => { setImportanceFilter('HIGH'); setSelectedView('summary'); }}
-                  className={`h-7 px-3 text-xs font-medium rounded-sm flex items-center gap-1.5 ${importanceFilter === 'HIGH' ? 'bg-background shadow-sm text-amber-600 dark:text-amber-500' : 'text-muted-foreground hover:text-foreground'}`}
-                  data-testid="btn-filter-importance-high"
-                >
-                  גבוהה בלבד
-                  <Star className="w-2.5 h-2.5 fill-current" />
-                </Button>
-              </div>
             </div>
           </div>
         )}
@@ -422,16 +359,6 @@ export function EconomicCalendar() {
                 className="flex gap-1 overflow-x-auto border-b border-border/50 pb-px scrollbar-thin"
                 data-testid="calendar-view-tabs"
               >
-                <button
-                  type="button"
-                  aria-pressed={selectedView === "summary"}
-                  onClick={() => setSelectedView("summary")}
-                  className={`shrink-0 px-4 py-2.5 text-xs font-bold border-b-2 transition-colors ${selectedView === "summary" ? "text-primary border-primary" : "text-muted-foreground border-transparent hover:text-foreground"}`}
-                  data-testid="calendar-tab-summary"
-                >
-                  סיכום שבועי
-                  <span className="mr-1.5 text-[10px] opacity-70">({weekEvents.length})</span>
-                </button>
                 {weekDays.map((day) => (
                   <button
                     key={day.key}
@@ -445,7 +372,63 @@ export function EconomicCalendar() {
                     <span className={`mr-1.5 text-[10px] ${day.count > 0 ? "text-primary font-bold" : "opacity-50"}`}>{day.count}</span>
                   </button>
                 ))}
+                <span className="h-7 w-px bg-border/70 mx-1 shrink-0 self-center" aria-hidden="true" />
+                <button
+                  type="button"
+                  aria-pressed={selectedView === "summary" && weekOffset === 0}
+                  onClick={() => selectWeek(0)}
+                  className={`shrink-0 px-3 py-2.5 text-xs font-bold border-b-2 transition-colors ${selectedView === "summary" && weekOffset === 0 ? "text-primary border-primary" : "text-muted-foreground border-transparent hover:text-foreground"}`}
+                  data-testid="calendar-tab-week-current"
+                >
+                  סיכום השבוע הנוכחי
+                  {weekOffset === 0 && <span className="mr-1.5 text-[10px] opacity-70">({weekEvents.length})</span>}
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={selectedView === "summary" && weekOffset === 1}
+                  onClick={() => selectWeek(1)}
+                  className={`shrink-0 px-3 py-2.5 text-xs font-bold border-b-2 transition-colors ${selectedView === "summary" && weekOffset === 1 ? "text-primary border-primary" : "text-muted-foreground border-transparent hover:text-foreground"}`}
+                  data-testid="calendar-tab-week-next"
+                >
+                  סיכום שבוע קדימה
+                  {weekOffset === 1 && <span className="mr-1.5 text-[10px] opacity-70">({weekEvents.length})</span>}
+                </button>
               </div>
+            </div>
+            <div className="px-4 pt-3 flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center bg-muted/40 p-1 rounded-md border border-border/50">
+                <Button
+                  variant={importanceFilter === 'ALL' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  onClick={() => { setImportanceFilter('ALL'); setSelectedView('summary'); }}
+                  className={`h-7 px-3 text-xs font-medium rounded-sm ${importanceFilter === 'ALL' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                  data-testid="btn-filter-importance-all"
+                >
+                  הכל
+                </Button>
+                <Button
+                  variant={importanceFilter === 'MEDIUM' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  onClick={() => { setImportanceFilter('MEDIUM'); setSelectedView('summary'); }}
+                  className={`h-7 px-3 text-xs font-medium rounded-sm ${importanceFilter === 'MEDIUM' ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                  data-testid="btn-filter-importance-medium"
+                >
+                  בינונית+
+                </Button>
+                <Button
+                  variant={importanceFilter === 'HIGH' ? 'secondary' : 'ghost'}
+                  size="sm"
+                  onClick={() => { setImportanceFilter('HIGH'); setSelectedView('summary'); }}
+                  className={`h-7 px-3 text-xs font-medium rounded-sm flex items-center gap-1.5 ${importanceFilter === 'HIGH' ? 'bg-background shadow-sm text-amber-600 dark:text-amber-500' : 'text-muted-foreground hover:text-foreground'}`}
+                  data-testid="btn-filter-importance-high"
+                >
+                  גבוהה בלבד
+                  <Star className="w-2.5 h-2.5 fill-current" />
+                </Button>
+              </div>
+              <span className="text-xs font-medium text-muted-foreground" data-testid="text-selected-week">
+                {formatWeekRange(weekBounds.start, weekBounds.end)}
+              </span>
             </div>
             <div
               className="flex flex-col"
@@ -475,7 +458,7 @@ export function EconomicCalendar() {
                   <div className="px-5 py-2 bg-muted/30 border-y border-border/40">
                     <h3 className="text-[11px] font-bold text-primary/80 tracking-wider uppercase flex items-center gap-1.5">
                       <Clock className="w-3.5 h-3.5" />
-                      סיכום אירועי השבוע — {COUNTRY_LABELS[countryFilter]}
+                      {weekOffset === 0 ? "סיכום השבוע הנוכחי" : "סיכום שבוע קדימה"} — {COUNTRY_LABELS[countryFilter]} ({formatWeekRange(weekBounds.start, weekBounds.end)})
                     </h3>
                   </div>
                 )}
