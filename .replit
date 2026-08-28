@@ -43,6 +43,7 @@ externalPort = 3000
 
 [userenv.shared]
 VITE_ACCESS_CODE = "711000!@#"
+ACCESS_ADMIN_EMAIL = "nirh711@gmail.com"
 
 [nix]
 channel = "stable-25_05"

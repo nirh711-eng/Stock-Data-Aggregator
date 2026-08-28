@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, TrendingUp, TrendingDown, Clock, Building2, Calendar, FileText, Activity, Star, RefreshCw, AlertTriangle, BarChart2, ArrowUpDown, Layers, Globe, Zap, MessageSquare, Landmark, Bell, Cloud, LogOut } from "lucide-react";
+import { Search, TrendingUp, TrendingDown, Clock, Building2, Calendar, FileText, Activity, Star, RefreshCw, AlertTriangle, BarChart2, ArrowUpDown, Layers, Globe, Zap, MessageSquare, Landmark, Bell, Cloud, LogOut, ShieldCheck } from "lucide-react";
 import { useClerk, useUser } from "@clerk/react";
+import { useLocation } from "wouter";
 import { 
   useGetStockData, 
   useGetStockSummary, 
@@ -29,6 +30,7 @@ import { SocialPulse } from "@/components/SocialPulse";
 import { BondYields } from "@/components/BondYields";
 import { MarketAlerts } from "@/components/MarketAlerts";
 import { useWatchlist } from "@/hooks/useWatchlist";
+import { useUsageTracking } from "@/hooks/useUsageTracking";
 
 const POPULAR_TICKERS = ["AAPL", "TSLA", "NVDA", "MSFT"];
 type ActiveTab = "search" | "sectors" | "market" | "economy" | "bottlenecks" | "social" | "bonds" | "alerts";
@@ -73,6 +75,10 @@ export default function Home() {
   const queryClient = useQueryClient();
   const { signOut } = useClerk();
   const { user } = useUser();
+  const [, setLocation] = useLocation();
+  const [isAdmin, setIsAdmin] = useState(false);
+  const { track } = useUsageTracking();
+  const trackedAnalysisTickersRef = useRef(new Set<string>());
 
   const switchTab = (tab: ActiveTab) => {
     setActiveTab(tab);
@@ -81,6 +87,26 @@ export default function Home() {
       return new Set(previous).add(tab);
     });
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/access/status", { credentials: "include", cache: "no-store" })
+      .then(async (response) => response.ok ? response.json() as Promise<{ isAdmin?: boolean }> : null)
+      .then((payload) => {
+        if (!cancelled) setIsAdmin(Boolean(payload?.isAdmin));
+      })
+      .catch(() => {
+        if (!cancelled) setIsAdmin(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    track("tab_view", { metadata: { tab: activeTab } });
+    if (activeTab === "alerts") track("alert_view");
+  }, [activeTab, track]);
 
   const {
     watchlist,
@@ -117,16 +143,25 @@ export default function Home() {
     }
   }, [stockData, activeTicker, isWatched, updateLastKnownDate]);
 
+  useEffect(() => {
+    if (!stockData || !activeTicker || activeTab !== "search" || trackedAnalysisTickersRef.current.has(activeTicker)) return;
+    trackedAnalysisTickersRef.current.add(activeTicker);
+    track("analysis_view", { ticker: activeTicker });
+  }, [activeTab, activeTicker, stockData, track]);
+
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (searchInput.trim()) {
-      setActiveTicker(searchInput.trim().toUpperCase());
+      const ticker = searchInput.trim().toUpperCase();
+      setActiveTicker(ticker);
+      track("stock_search", { ticker, metadata: { source: "search_form" } });
     }
   };
 
   const selectTicker = (ticker: string) => {
     setSearchInput(ticker);
     setActiveTicker(ticker);
+    track("stock_search", { ticker, metadata: { source: "selection" } });
     switchTab("search");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
@@ -142,6 +177,7 @@ export default function Home() {
     if (!activeTicker) return;
     if (isWatched(activeTicker)) {
       removeFromWatchlist(activeTicker);
+      track("watchlist_remove", { ticker: activeTicker });
     } else {
       if (watchlist.length >= 20) {
         window.alert("ניתן לעקוב אחר עד 20 טיקרים בכל פעם. הסר טיקר קיים כדי להוסיף חדש.");
@@ -154,6 +190,7 @@ export default function Home() {
         stockData?.companyName ?? null,
         stockData?.sector ?? null
       );
+      track("watchlist_add", { ticker: activeTicker });
     }
   };
 
@@ -226,6 +263,20 @@ export default function Home() {
               onClearAlerts={clearAlerts}
               onTickerClick={selectTicker}
             />
+            {isAdmin && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setLocation("/admin")}
+                title="ניהול משתמשים ושימוש"
+                className="shrink-0"
+                data-testid="admin-dashboard-link"
+              >
+                <ShieldCheck className="h-3.5 w-3.5" />
+                <span className="hidden lg:inline">ניהול</span>
+              </Button>
+            )}
             <Button
               type="button"
               variant="outline"

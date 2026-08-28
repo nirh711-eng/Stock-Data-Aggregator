@@ -19,3 +19,4 @@
 
 export * from "./user-preferences";
 export * from "./sector-symbol-availability";
+export * from "./access-control";

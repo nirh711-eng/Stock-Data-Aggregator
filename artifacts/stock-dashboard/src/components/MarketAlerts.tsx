@@ -15,6 +15,7 @@ type MarketAlert = Omit<BaseMarketAlert, "companyImpact" | "sectorImpact"> & {
 };
 import { useTrackedArticles } from "@/hooks/useTrackedArticles";
 import type { WatchlistItem } from "@/hooks/useWatchlist";
+import { useUsageTracking } from "@/hooks/useUsageTracking";
 import { SECTOR_ETF_BY_NAME } from "@/lib/marketSectors";
 
 const LOCAL_ALERTS_KEY = "stockpulse_market_alerts_data";
@@ -75,6 +76,7 @@ export function MarketAlerts({
     removeTrackedArticle,
     isArticleTracked,
   } = useTrackedArticles();
+  const { track } = useUsageTracking();
 
   const watchlistKey = watchlist.map((item) => item.ticker).sort().join(",");
 
@@ -244,8 +246,15 @@ export function MarketAlerts({
               watchlistVersionRef.current += 1;
               onRemoveTicker(ticker);
             }}
-            onAddArticle={(ticker, article) => addTrackedArticle(ticker, article)}
-            onRemoveArticle={removeTrackedArticle}
+            onAddArticle={(ticker, article) => {
+              const added = addTrackedArticle(ticker, article);
+              if (added) track("article_saved", { ticker });
+              return added;
+            }}
+            onRemoveArticle={(ticker, id) => {
+              removeTrackedArticle(ticker, id);
+              track("article_removed", { ticker });
+            }}
           />
           <Button
             variant="outline"
@@ -354,14 +363,17 @@ export function MarketAlerts({
                            type="button"
                            variant="ghost"
                            size="sm"
-                           onClick={() => addTrackedArticle(alert.ticker, {
-                             title: alert.title,
-                             url: alert.url,
-                             source: alert.source,
-                             publishedAt: alert.publishedAt,
-                             summary: alert.summary,
-                             articleType: alert.articleType,
-                           })}
+                           onClick={() => {
+                             const added = addTrackedArticle(alert.ticker, {
+                               title: alert.title,
+                               url: alert.url,
+                               source: alert.source,
+                               publishedAt: alert.publishedAt,
+                               summary: alert.summary,
+                               articleType: alert.articleType,
+                             });
+                             if (added) track("article_saved", { ticker: alert.ticker });
+                           }}
                            disabled={isArticleTracked(alert.ticker, alert.url)}
                            className="h-7 px-2 text-xs"
                          >

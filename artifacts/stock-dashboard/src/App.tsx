@@ -4,7 +4,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/Home";
-import { PasscodeGate } from "@/components/PasscodeGate";
+import AdminPage from "@/pages/AdminPage";
+import { AccessGate } from "@/components/AccessGate";
 import { AuthLanding } from "@/components/AuthLanding";
 import { ClerkProvider, Show, SignIn, SignUp } from "@clerk/react";
 import { publishableKeyFromHost } from "@clerk/react/internal";
@@ -33,6 +34,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={HomeRoute} />
+      <Route path="/admin" component={AdminRoute} />
       <Route path="/sign-in/*?" component={SignInPage} />
       <Route path="/sign-up/*?" component={SignUpPage} />
       <Route component={NotFound} />
@@ -44,14 +46,34 @@ function HomeRoute() {
   return (
     <>
       <Show when="signed-in">
-        <PasscodeGate>
-          <QueryClientProvider client={queryClient}>
-            <TooltipProvider>
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider>
+            <AccessGate>
               <Home />
               <Toaster />
-            </TooltipProvider>
-          </QueryClientProvider>
-        </PasscodeGate>
+            </AccessGate>
+          </TooltipProvider>
+        </QueryClientProvider>
+      </Show>
+      <Show when="signed-out">
+        <AuthLanding />
+      </Show>
+    </>
+  );
+}
+
+function AdminRoute() {
+  return (
+    <>
+      <Show when="signed-in">
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider>
+            <AccessGate>
+              <AdminPage />
+              <Toaster />
+            </AccessGate>
+          </TooltipProvider>
+        </QueryClientProvider>
       </Show>
       <Show when="signed-out">
         <AuthLanding />

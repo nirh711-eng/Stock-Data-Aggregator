@@ -12,10 +12,13 @@ import bondsRouter from "./bonds";
 import economicCalendarRouter from "./economic-calendar";
 import alertsRouter from "./alerts";
 import preferencesRouter from "./preferences";
+import accessRouter, { requireApprovedAccess } from "./access";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(accessRouter);
+router.use(requireApprovedAccess);
 router.use(watchlistRouter);
 router.use(sectorsRouter);
 router.use(bottlenecksRouter);
