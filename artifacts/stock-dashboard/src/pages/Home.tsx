@@ -31,6 +31,7 @@ import { MarketAlerts } from "@/components/MarketAlerts";
 import { useWatchlist } from "@/hooks/useWatchlist";
 
 const POPULAR_TICKERS = ["AAPL", "TSLA", "NVDA", "MSFT"];
+type ActiveTab = "search" | "sectors" | "market" | "economy" | "bottlenecks" | "social" | "bonds" | "alerts";
 
 function useTimeSince(isoString: string | null | undefined): string {
   const [label, setLabel] = useState("");
@@ -67,10 +68,19 @@ const formatHebrewNumber = (num: number, options?: Intl.NumberFormatOptions) => 
 export default function Home() {
   const [searchInput, setSearchInput] = useState("");
   const [activeTicker, setActiveTicker] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"search" | "sectors" | "market" | "economy" | "bottlenecks" | "social" | "bonds" | "alerts">("search");
+  const [activeTab, setActiveTab] = useState<ActiveTab>("search");
+  const [visitedTabs, setVisitedTabs] = useState<Set<ActiveTab>>(() => new Set(["search"]));
   const queryClient = useQueryClient();
   const { signOut } = useClerk();
   const { user } = useUser();
+
+  const switchTab = (tab: ActiveTab) => {
+    setActiveTab(tab);
+    setVisitedTabs((previous) => {
+      if (previous.has(tab)) return previous;
+      return new Set(previous).add(tab);
+    });
+  };
 
   const {
     watchlist,
@@ -117,7 +127,7 @@ export default function Home() {
   const selectTicker = (ticker: string) => {
     setSearchInput(ticker);
     setActiveTicker(ticker);
-    setActiveTab("search");
+    switchTab("search");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -233,7 +243,7 @@ export default function Home() {
         {/* Tab Bar */}
         <div className="flex items-center gap-1 overflow-x-auto border-b border-border pb-0 -mb-2">
           <button
-            onClick={() => setActiveTab("search")}
+            onClick={() => switchTab("search")}
             data-testid="tab-search"
             className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
               ${activeTab === "search"
@@ -244,7 +254,7 @@ export default function Home() {
             חיפוש מניה
           </button>
           <button
-            onClick={() => setActiveTab("sectors")}
+            onClick={() => switchTab("sectors")}
             data-testid="tab-sectors"
             className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
               ${activeTab === "sectors"
@@ -255,7 +265,7 @@ export default function Home() {
             סקטורים
           </button>
           <button
-            onClick={() => setActiveTab("market")}
+            onClick={() => switchTab("market")}
             data-testid="tab-market-report"
             className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
               ${activeTab === "market"
@@ -266,7 +276,7 @@ export default function Home() {
             סיכום יומי
           </button>
           <button
-            onClick={() => setActiveTab("economy")}
+            onClick={() => switchTab("economy")}
             data-testid="tab-economic-calendar"
             className={`flex shrink-0 items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
               ${activeTab === "economy"
@@ -277,7 +287,7 @@ export default function Home() {
             נתונים כלכליים
           </button>
           <button
-            onClick={() => setActiveTab("bottlenecks")}
+            onClick={() => switchTab("bottlenecks")}
             data-testid="tab-bottlenecks"
             className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
               ${activeTab === "bottlenecks"
@@ -288,7 +298,7 @@ export default function Home() {
             צווארי בקבוק
           </button>
           <button
-            onClick={() => setActiveTab("social")}
+            onClick={() => switchTab("social")}
             data-testid="tab-social"
             className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
               ${activeTab === "social"
@@ -299,7 +309,7 @@ export default function Home() {
             סנטימנט חברתי
           </button>
           <button
-            onClick={() => setActiveTab("bonds")}
+            onClick={() => switchTab("bonds")}
             data-testid="tab-bonds"
             className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
               ${activeTab === "bonds"
@@ -310,7 +320,7 @@ export default function Home() {
             תשואות אג&quot;ח
           </button>
           <button
-            onClick={() => setActiveTab("alerts")}
+            onClick={() => switchTab("alerts")}
             data-testid="tab-alerts"
             className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
               ${activeTab === "alerts"
@@ -323,8 +333,8 @@ export default function Home() {
         </div>
 
         {/* Alerts Tab */}
-        {activeTab === "alerts" && (
-          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+        {visitedTabs.has("alerts") && (
+          <div hidden={activeTab !== "alerts"} className="animate-in fade-in slide-in-from-bottom-2 duration-300">
             <MarketAlerts
               watchlist={watchlist}
               onSelectTicker={selectTicker}
@@ -335,8 +345,8 @@ export default function Home() {
         )}
 
         {/* Bond Yields Tab */}
-        {activeTab === "bonds" && (
-          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+        {visitedTabs.has("bonds") && (
+          <div hidden={activeTab !== "bonds"} className="animate-in fade-in slide-in-from-bottom-2 duration-300">
             <Card className="bg-card border-border">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium flex items-center gap-2 text-muted-foreground">
@@ -352,8 +362,8 @@ export default function Home() {
         )}
 
         {/* Social Pulse Tab */}
-        {activeTab === "social" && (
-          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+        {visitedTabs.has("social") && (
+          <div hidden={activeTab !== "social"} className="animate-in fade-in slide-in-from-bottom-2 duration-300">
             <Card className="bg-card border-border">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium flex items-center gap-2 text-muted-foreground">
@@ -369,8 +379,8 @@ export default function Home() {
         )}
 
         {/* Bottleneck Tab */}
-        {activeTab === "bottlenecks" && (
-          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+        {visitedTabs.has("bottlenecks") && (
+          <div hidden={activeTab !== "bottlenecks"} className="animate-in fade-in slide-in-from-bottom-2 duration-300">
             <Card className="bg-card border-border">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium flex items-center gap-2 text-muted-foreground">
@@ -386,22 +396,22 @@ export default function Home() {
         )}
 
         {/* Market Daily Report Tab */}
-        {activeTab === "market" && (
-          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+        {visitedTabs.has("market") && (
+          <div hidden={activeTab !== "market"} className="animate-in fade-in slide-in-from-bottom-2 duration-300">
             <MarketReport />
           </div>
         )}
 
         {/* Important economic releases — U.S. and Israel */}
-        {activeTab === "economy" && (
-          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+        {visitedTabs.has("economy") && (
+          <div hidden={activeTab !== "economy"} className="animate-in fade-in slide-in-from-bottom-2 duration-300">
             <EconomicCalendar />
           </div>
         )}
 
         {/* Sector Explorer Tab */}
-        {activeTab === "sectors" && (
-          <div className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+        {visitedTabs.has("sectors") && (
+          <div hidden={activeTab !== "sectors"} className="animate-in fade-in slide-in-from-bottom-2 duration-300">
             <Card className="bg-card border-border">
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium flex items-center gap-2 text-muted-foreground">
@@ -417,7 +427,7 @@ export default function Home() {
         )}
 
         {/* Search Tab content */}
-        {activeTab === "search" && <>
+        {visitedTabs.has("search") && <div hidden={activeTab !== "search"}>
 
         {/* Empty State */}
         {!activeTicker && (
@@ -844,7 +854,7 @@ export default function Home() {
           </div>
         )}
 
-        </>}
+        </div>}
 
       </div>
     </div>
