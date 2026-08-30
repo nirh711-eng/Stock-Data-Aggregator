@@ -28,14 +28,17 @@ interface Bottleneck {
   servingCompanies: ServingCompany[];
   capitalFlow: string;
   whyItMatters: string;
+  demandAnchors?: string[];
   confidenceScore?: number;
   confidenceLabel?: "גבוהה" | "בינונית" | "נמוכה";
   evidence?: string[];
   quantitativeSignals?: {
     companiesCovered: number;
+    underRadarCount: number;
     avgMarketCap: string;
     avg52WeekPosition: number | null;
     avgRelativeVolume: number | null;
+    crowdingPenalty: number;
   };
 }
 
@@ -64,6 +67,7 @@ interface BottleneckAnalysis {
   currentBottlenecks: Bottleneck[];
   nextBottleneck: NextBottleneck;
   smartMoneyFlow: string;
+  connections: BottleneckConnection[];
   generatedAt: string;
 }
 
@@ -71,9 +75,17 @@ interface MarketEvidence {
   ticker: string;
   marketCap: number | null;
   marketCapLabel: string;
+  marketCapBand: "Small" | "Mid" | "Large" | "Mega" | "Unknown";
   change1d: number | null;
   relativeVolume: number | null;
   week52Position: number | null;
+}
+
+interface BottleneckConnection {
+  from: string;
+  to: string;
+  relation: string;
+  whyItMatters: string;
 }
 
 type BottleneckThesis = {
@@ -86,6 +98,7 @@ type BottleneckThesis = {
   capitalFlow: string;
   evidence: string[];
   tickers: string[];
+  demandAnchors: string[];
 };
 
 const BOTTLENECK_THESES: BottleneckThesis[] = [
@@ -97,8 +110,9 @@ const BOTTLENECK_THESES: BottleneckThesis[] = [
     maturityLevel: "בשל",
     whyItMatters: "כל דולר שנוסף להשקעות AI עובר קודם דרך שכבת המאיצים והאריזה, ולכן זו נקודת לכידת ערך מדידה ולא רק נרטיב.",
     capitalFlow: "CAPEX של hyperscalers, הזמנות ארוכות טווח וצמיחת ביקוש לחישוב מואץ.",
-    evidence: ["תלות מערכתית במאיץ + HBM + אריזה מתקדמת", "ספקים מעטים עם יתרון ביצועי ותפוקת ייצור", "אימות כמותי לפי שווי, מומנטום ונפח מסחר של החברות המובילות"],
-    tickers: ["NVDA", "AVGO", "TSM", "MU"],
+    evidence: ["תלות מערכתית במאיץ + HBM + אריזה מתקדמת", "ספקים מעטים עם יתרון ביצועי ותפוקת ייצור", "הסורק מפריד בין חברות הביקוש הגדולות לבין חוליות ההיצע הנדירות"],
+    tickers: ["AVGO", "TSM", "MU", "ACLS", "ONTO"],
+    demandAnchors: ["NVDA", "AMD", "AVGO"],
   },
   {
     name: "חשמל, קירור וחיבור לרשת עבור דאטה סנטרים",
@@ -109,7 +123,8 @@ const BOTTLENECK_THESES: BottleneckThesis[] = [
     whyItMatters: "פרויקט מחשוב שלא מקבל חשמל וחיבור לרשת בזמן אינו מייצר הכנסה, ולכן ספקי התשתית הקריטית עשויים ללכוד ערך גם אם מחזור השבבים מתמתן.",
     capitalFlow: "השקעות תשתית, חוזי ציוד חשמלי ותקציבי הרחבה של ענן ומרכזי נתונים.",
     evidence: ["צורך פיזי שאי אפשר לפתור רק בתוכנה", "זמני אספקה והיתרי רשת יוצרים חסם כניסה", "אימות כמותי לפי שווי, מומנטום ונפח מסחר של הספקים"],
-    tickers: ["VRT", "ETN", "PWR", "GEV"],
+    tickers: ["MOD", "VRT", "ETN", "PWR", "GEV"],
+    demandAnchors: ["NVDA", "MSFT", "AMZN"],
   },
   {
     name: "ציוד ייצור שבבים ו-lithography",
@@ -119,27 +134,45 @@ const BOTTLENECK_THESES: BottleneckThesis[] = [
     maturityLevel: "בשל",
     whyItMatters: "כל הרחבת קיבולת מתקדמת דורשת השקעה בציוד לפני שהכנסות השבבים מגיעות, כך שהספקים נהנים ממנוף על כל שרשרת הערך.",
     capitalFlow: "מפעלי foundry, סובסידיות שבבים והזמנות ציוד לטכנולוגיות 2nm/3nm.",
-    evidence: ["ריכוז ספקים גבוה בתהליכי ייצור מתקדמים", "עלות החלפה ואימות תהליך מונעים מעבר מהיר", "אימות כמותי לפי עוצמת מחיר ונפח של מובילי הציוד"],
-    tickers: ["ASML", "AMAT", "LRCX", "KLAC"],
+    evidence: ["ריכוז ספקים גבוה בתהליכי ייצור מתקדמים", "עלות החלפה ואימות תהליך מונעים מעבר מהיר", "הסורק נותן עדיפות לספקי תהליך קטנים יותר לפני מובילי המדד"],
+    tickers: ["ACLS", "ONTO", "FORM", "UCTT", "ASML", "AMAT", "LRCX", "KLAC"],
+    demandAnchors: ["TSM", "NVDA", "INTC"],
   },
   {
-    name: "רשתות נתונים ואבטחת תעבורה",
-    sector: "תוכנה ותשתיות רשת",
-    description: "הרחבת AI מגדילה את תעבורת הנתונים בתוך הדאטה סנטר ומחוצה לו. צוואר הבקבוק נמצא ברכיבי קישוריות, אופטיקה, switching ואבטחה שמאפשרים להעביר את החישוב בפועל.",
-    powerSource: "טכנולוגיה + סקייל + תוכנה",
+    name: "אופטיקה, פוטוניקה וקישוריות 800G/1.6T",
+    sector: "אופטיקה ורשתות נתונים",
+    description: "החישוב המואץ יוצר צוואר פיזי בקישורים בין שרתים: transceivers, לייזרים, DSP, סיבים ואריזה אופטית. זו חוליית היצע צרה יותר מהשמות הגדולים שמוכרים את הענן.",
+    powerSource: "טכנולוגיה + IP + ייצור מדויק",
     maturityLevel: "בצמיחה",
-    whyItMatters: "ללא רוחב פס, החומרה היקרה אינה מנוצלת; לכן ההוצאה על networking יכולה לצמוח גם כשלקוחות מייעלים את הוצאות המחשוב.",
-    capitalFlow: "שדרוגי data center, מעבר ל-800G/1.6T ותקציבי אבטחת ענן.",
-    evidence: ["הגידול בחישוב מייצר ביקוש משלים לרשת ולאבטחה", "עלויות מעבר ותאימות מעדיפות ספקים מוכחים", "אימות כמותי לפי ביצועי שוק ונפח מסחר"],
-    tickers: ["ANET", "CSCO", "CRWD", "PANW"],
+    whyItMatters: "ללא קישוריות אופטית מהירה, GPU יקר נשאר לא מנוצל. צוואר האספקה נמצא אצל יצרני הרכיבים וההרכבה, לא בהכרח אצל מפעיל הענן או יצרן המאיץ.",
+    capitalFlow: "שדרוגי data center, מעבר ל-800G/1.6T והזמנות לייזרים, DSP ו-transceivers.",
+    evidence: ["הגידול בחישוב מייצר ביקוש משלים לקישורים אופטיים", "תהליכי ייצור, yield ותאימות יוצרים חסם כניסה", "מניות נישה מאפשרות לזהות את הצוואר לפני שהסיפור מגיע למדדים הגדולים"],
+    tickers: ["LITE", "COHR", "FN", "MTSI", "CIEN", "AAOI"],
+    demandAnchors: ["ANET", "NVDA", "META", "MSFT"],
+  },
+  {
+    name: "מגנטים קבועים, rare earth ועיבוד חומרים",
+    sector: "מגנטים וחומרי גלם קריטיים",
+    description: "מנועים, רובוטיקה, טורבינות, כלי רכב ומערכות צבאיות תלויים במגנטים קבועים ובעיבוד של neodymium, praseodymium, dysprosium ו-terbium. ההיצע מרוכז גיאוגרפית, והחוליה האסטרטגית היא כרייה, הפרדה, alloying וייצור מגנט — לא רק יצרן המוצר הסופי.",
+    powerSource: "חומרי גלם + רגולציה + עיבוד ייחודי",
+    maturityLevel: "מתפתח",
+    whyItMatters: "זו תלות פיזית עם זמני הקמה ארוכים ואפשרויות החלפה מוגבלות. אם שרשרת האספקה מתפצלת גיאוגרפית, ספקי הפרדה ועיבוד יכולים להפוך לצוואר לפני שהביקוש הסופי מתומחר.",
+    capitalFlow: "השקעות בשרשרת אספקה מערבית, חוזי offtake, מענקים ממשלתיים וביקוש ממנועים, defense ורובוטיקה.",
+    evidence: ["הפרדה ועיבוד דורשים ידע, רישוי ותשתית כימית", "ריכוז גיאוגרפי מגדיל סיכון אספקה גם ללא זינוק במחיר", "הסורק מחפש חברות קטנות ובינוניות עם חשיפה ישירה ולא ETF או יצרן מוצר סופי"],
+    tickers: ["MP", "UUUU", "NEO.TO", "LYSDY", "ATI"],
+    demandAnchors: ["TSLA", "GEV", "NOC", "RTX"],
   },
 ];
 
 const COMPANY_NAMES: Record<string, string> = {
-  NVDA: "NVIDIA",
   AVGO: "Broadcom",
   TSM: "TSMC",
   MU: "Micron",
+  ACLS: "Axcelis Technologies",
+  ONTO: "Onto Innovation",
+  FORM: "FormFactor",
+  UCTT: "Ultra Clean Holdings",
+  MOD: "Modine",
   VRT: "Vertiv",
   ETN: "Eaton",
   PWR: "Quanta Services",
@@ -148,17 +181,28 @@ const COMPANY_NAMES: Record<string, string> = {
   AMAT: "Applied Materials",
   LRCX: "Lam Research",
   KLAC: "KLA",
-  ANET: "Arista Networks",
-  CSCO: "Cisco",
-  CRWD: "CrowdStrike",
-  PANW: "Palo Alto Networks",
+  LITE: "Lumentum",
+  COHR: "Coherent",
+  FN: "Fabrinet",
+  MTSI: "MACOM Technology Solutions",
+  CIEN: "Ciena",
+  AAOI: "Applied Optoelectronics",
+  MP: "MP Materials",
+  UUUU: "Energy Fuels",
+  "NEO.TO": "Neo Performance Materials",
+  LYSDY: "Lynas Rare Earths",
+  ATI: "ATI",
 };
 
 const COMPANY_ROLES: Record<string, string> = {
-  NVDA: "מאיצי GPU, תוכנת CUDA ופלטפורמת AI",
   AVGO: "שבבי networking, ASIC וקישוריות לדאטה סנטר",
   TSM: "ייצור foundry ואריזה מתקדמת",
   MU: "זיכרון HBM ו-DRAM למחשוב מואץ",
+  ACLS: "ציוד ion implantation לייצור שבבים",
+  ONTO: "מטרולוגיה ובקרת תהליך לייצור מתקדם",
+  FORM: "ציוד בדיקה ואריזה לזיכרון ושבבים",
+  UCTT: "רכיבים ושירותים לציוד wafer fabrication",
+  MOD: "מערכות thermal management למחשוב ותעשייה",
   VRT: "חשמל, UPS וקירור לדאטה סנטרים",
   ETN: "ניהול הספק, switchgear וחיבורי חשמל",
   PWR: "הקמת תשתיות הולכה וחיבור לרשת",
@@ -167,10 +211,17 @@ const COMPANY_ROLES: Record<string, string> = {
   AMAT: "ציוד deposition וייצור wafer",
   LRCX: "ציוד etch וניקוי wafer",
   KLAC: "בקרת תהליך ומטרולוגיה",
-  ANET: "מתגי Ethernet ורשתות AI",
-  CSCO: "תשתיות switching ואבטחת רשת",
-  CRWD: "אבטחת endpoint ותעבורת ענן",
-  PANW: "פלטפורמת אבטחת רשת וענן",
+  LITE: "מודולים אופטיים ופתרונות photonics",
+  COHR: "לייזרים, transceivers ורכיבים אופטיים",
+  FN: "ייצור והרכבה של מודולים אופטיים",
+  MTSI: "רכיבי RF, analog ו-DSP לקישוריות",
+  CIEN: "מערכות optical transport ו-DWDM",
+  AAOI: "לייזרים ו-transceivers לדאטה סנטר",
+  MP: "כרייה והפרדה של rare earth בצפון אמריקה",
+  UUUU: "עיבוד והפרדת rare earth ומונזיט",
+  "NEO.TO": "ייצור אבקות וסגסוגות למגנטים קבועים",
+  LYSDY: "כרייה, הפרדה ועיבוד rare earth",
+  ATI: "סגסוגות מיוחדות לתעופה, defense ומגנטים",
 };
 
 function formatMarketCap(value: number | null): string {
@@ -182,6 +233,14 @@ function formatMarketCap(value: number | null): string {
 
 function confidenceLabel(score: number): "גבוהה" | "בינונית" | "נמוכה" {
   return score >= 75 ? "גבוהה" : score >= 55 ? "בינונית" : "נמוכה";
+}
+
+function marketCapBand(value: number | null): "Small" | "Mid" | "Large" | "Mega" | "Unknown" {
+  if (!value || value <= 0) return "Unknown";
+  if (value >= 200e9) return "Mega";
+  if (value >= 10e9) return "Large";
+  if (value >= 2e9) return "Mid";
+  return "Small";
 }
 
 async function fetchMarketEvidence(): Promise<MarketEvidence[]> {
@@ -199,6 +258,7 @@ async function fetchMarketEvidence(): Promise<MarketEvidence[]> {
         ticker: String(quote.symbol ?? ""),
         marketCap,
         marketCapLabel: formatMarketCap(marketCap),
+        marketCapBand: marketCapBand(marketCap),
         change1d: typeof quote.regularMarketChangePercent === "number" ? quote.regularMarketChangePercent : null,
         relativeVolume: volume && averageVolume ? volume / averageVolume : null,
         week52Position: price && high && low && high > low ? ((price - low) / (high - low)) * 100 : null,
@@ -218,14 +278,19 @@ function evidenceForThesis(thesis: BottleneckThesis, marketEvidence: MarketEvide
   const avgPosition = avg(covered.map((item) => item.week52Position));
   const avgVolume = avg(covered.map((item) => item.relativeVolume));
   const positiveDays = covered.filter((item) => (item.change1d ?? 0) > 0).length;
-  const coverageScore = Math.min(25, covered.length * 6);
-  const marketScore = (avgPosition ?? 50) >= 65 ? 15 : (avgPosition ?? 50) >= 45 ? 10 : 5;
+  const underRadarCount = covered.filter((item) => item.marketCapBand === "Small" || item.marketCapBand === "Mid").length;
+  const underRadarScore = Math.min(24, underRadarCount * 5);
+  const coverageScore = Math.min(20, covered.length * 4);
+  const marketScore = (avgPosition ?? 50) >= 65 ? 12 : (avgPosition ?? 50) >= 45 ? 8 : 5;
   const flowScore = (avgVolume ?? 1) >= 1.25 || positiveDays >= Math.ceil(Math.max(1, covered.length) / 2) ? 10 : 5;
-  const score = Math.min(95, 50 + coverageScore + marketScore + flowScore);
+  const crowdingPenalty = (avgPosition ?? 50) >= 88 ? 12 : (avgPosition ?? 50) >= 78 ? 6 : 0;
+  const score = Math.max(20, Math.min(95, 35 + coverageScore + underRadarScore + marketScore + flowScore - crowdingPenalty));
   return {
     covered,
     avgPosition,
     avgVolume,
+    underRadarCount,
+    crowdingPenalty,
     score,
     label: confidenceLabel(score),
   };
@@ -237,21 +302,66 @@ function buildEvidenceSummary(marketEvidence: MarketEvidence[]): string {
     const companies = details.covered.map((item) =>
       `${item.ticker}: שווי ${item.marketCapLabel}, שינוי יומי ${item.change1d === null ? "לא זמין" : `${item.change1d.toFixed(2)}%`}, מיקום 52 שבועות ${item.week52Position === null ? "לא זמין" : `${item.week52Position.toFixed(0)}%`}, נפח יחסי ${item.relativeVolume === null ? "לא זמין" : `${item.relativeVolume.toFixed(2)}x`}`,
     ).join(" | ");
-    return `${thesis.name}: ${companies || "אין נתון חי"} | ציון אמינות מחושב ${details.score}/100 (${details.label})`;
+    const anchors = thesis.demandAnchors.join(", ");
+    return `${thesis.name}: ${companies || "אין נתון חי"} | מועמדים מתחת לרדאר ${details.underRadarCount} | קנס צפיפות ${details.crowdingPenalty} | ציון אמינות מחושב ${details.score}/100 (${details.label}) | עוגני ביקוש בלבד: ${anchors}`;
   }).join("\n");
 }
 
+function rankedTheses(marketEvidence: MarketEvidence[]): BottleneckThesis[] {
+  return [...BOTTLENECK_THESES].sort((a, b) => {
+    const aDetails = evidenceForThesis(a, marketEvidence);
+    const bDetails = evidenceForThesis(b, marketEvidence);
+    return bDetails.score - aDetails.score || bDetails.underRadarCount - aDetails.underRadarCount;
+  });
+}
+
+function buildBottleneckConnections(): BottleneckConnection[] {
+  return [
+    {
+      from: "מאיצי AI וזיכרון High-Bandwidth",
+      to: "אופטיקה, פוטוניקה וקישוריות 800G/1.6T",
+      relation: "החישוב מייצר תעבורה",
+      whyItMatters: "כל אשכול GPU חדש מגדיל את מספר הקישורים, ה-transceivers וה-DSP הנדרשים בין השרתים.",
+    },
+    {
+      from: "אופטיקה, פוטוניקה וקישוריות 800G/1.6T",
+      to: "רשתות נתונים ואבטחת תעבורה",
+      relation: "האופטיקה היא שכבת ההעברה",
+      whyItMatters: "בלי שכבת optical transport מהירה, השדרוגים של switching לא מתורגמים לקיבולת שימושית.",
+    },
+    {
+      from: "מאיצי AI וזיכרון High-Bandwidth",
+      to: "חשמל, קירור וחיבור לרשת עבור דאטה סנטרים",
+      relation: "קיבולת מחשוב צורכת הספק",
+      whyItMatters: "צפיפות חישוב גבוהה הופכת מגה-ואטים, שנאים וקירור לתנאי הפעלה ולא להוצאה נלווית.",
+    },
+    {
+      from: "מגנטים קבועים, rare earth ועיבוד חומרים",
+      to: "חשמל, קירור וחיבור לרשת עבור דאטה סנטרים",
+      relation: "מגנטים מאפשרים מנועים וציוד",
+      whyItMatters: "טורבינות, מנועים, רובוטיקה ומערכות קירור תלויים בחומרים מגנטיים עם שרשרת אספקה קצרה.",
+    },
+    {
+      from: "ציוד ייצור שבבים ו-lithography",
+      to: "מאיצי AI וזיכרון High-Bandwidth",
+      relation: "ציוד הוא צוואר upstream",
+      whyItMatters: "בלי ציוד implant, metrology, בדיקה ואריזה, לא ניתן להרחיב את היצע המאיצים והזיכרון.",
+    },
+  ];
+}
+
 function buildFallbackAnalysis(marketEvidence: MarketEvidence[]): BottleneckAnalysis {
-  const currentBottlenecks = BOTTLENECK_THESES.slice(0, 4).map((thesis) => {
+  const ranked = rankedTheses(marketEvidence);
+  const currentBottlenecks = ranked.slice(0, 5).map((thesis) => {
     const details = evidenceForThesis(thesis, marketEvidence);
-    const companies = (details.covered.length ? details.covered : thesis.tickers.map((ticker) => ({ ticker, marketCapLabel: "לא זמין" })))
+    const companies = (details.covered.length ? details.covered : thesis.tickers.map((ticker) => ({ ticker, marketCapLabel: "לא זמין", marketCapBand: "Unknown" as const })))
       .slice(0, 4)
       .map((item) => ({
         ticker: item.ticker,
         name: COMPANY_NAMES[item.ticker] ?? item.ticker,
         role: COMPANY_ROLES[item.ticker] ?? "ספק קריטי בצומת הערך",
         moat: thesis.powerSource,
-        marketCap: item.marketCapLabel,
+        marketCap: item.marketCapBand,
       }));
     return {
       name: thesis.name,
@@ -262,11 +372,13 @@ function buildFallbackAnalysis(marketEvidence: MarketEvidence[]): BottleneckAnal
       servingCompanies: companies,
       capitalFlow: thesis.capitalFlow,
       whyItMatters: thesis.whyItMatters,
+        demandAnchors: thesis.demandAnchors,
       confidenceScore: details.score,
       confidenceLabel: details.label,
       evidence: thesis.evidence,
       quantitativeSignals: {
         companiesCovered: details.covered.length,
+        underRadarCount: details.underRadarCount,
         avgMarketCap: formatMarketCap(
           details.covered.length
             ? details.covered.reduce((sum, item) => sum + (item.marketCap ?? 0), 0) / details.covered.length
@@ -274,34 +386,36 @@ function buildFallbackAnalysis(marketEvidence: MarketEvidence[]): BottleneckAnal
         ),
         avg52WeekPosition: details.avgPosition,
         avgRelativeVolume: details.avgVolume,
+        crowdingPenalty: details.crowdingPenalty,
       },
     };
   });
-  const nextThesis = BOTTLENECK_THESES[1];
+  const nextThesis = ranked.find((thesis) => thesis.maturityLevel === "מתפתח") ?? ranked[0];
   const nextDetails = evidenceForThesis(nextThesis, marketEvidence);
   return {
-    marketContext: "הניתוח משלב מסגרת מבנית של תלות בתשתית עם נתוני שוק חיים עבור החברות בצומת. ציון האמינות אינו תחזית מחיר: הוא משקלל כיסוי נתונים, מיקום מול טווח 52 שבועות ונפח יחסי.",
+    marketContext: "הניתוח מפריד בין עוגני ביקוש גדולים לבין חוליות היצע נדירות. הדירוג מחפש ספקי נישה, תלות פיזית וחסמי החלפה — ומעניש קבוצות שכבר צפופות מדי או קרובות לשיא הטווח.",
     currentBottlenecks,
     nextBottleneck: {
-      name: "חשמל, קירור וחיבור לרשת עבור דאטה סנטרים",
+      name: nextThesis.name,
       sector: nextThesis.sector,
       timeline: "6–18 חודשים",
-      trigger: "המשך הרחבת קיבולת AI ללא גידול מקביל בהספק זמין, שנאים וחיבורי רשת.",
-      earlySignals: "הזמנות ציוד חשמלי, backlog ארוך, פרויקטים שממתינים לחיבור לרשת ועלייה בנפח המסחר של ספקי התשתית.",
+      trigger: `התרחבות הביקוש ל-${nextThesis.name} לפני שהיצע חדש, רישוי ויכולת ייצור יכולים להדביק אותו.`,
+      earlySignals: nextThesis.evidence.join(" · "),
       whyNow: nextThesis.whyItMatters,
       capitalFlowMap: nextThesis.capitalFlow,
       positionedCompanies: nextThesis.tickers.slice(0, 4).map((ticker) => ({
         ticker,
-        name: ticker,
+        name: COMPANY_NAMES[ticker] ?? ticker,
         whyWin: "חשיפה ישירה לציוד או לתשתית שמאפשרים להפעיל קיבולת מחשוב חדשה.",
-        marketCap: marketEvidence.find((item) => item.ticker === ticker)?.marketCapLabel ?? "לא זמין",
+        marketCap: marketEvidence.find((item) => item.ticker === ticker)?.marketCapBand ?? "Unknown",
       })),
       urgency: "high",
       confidenceScore: nextDetails.score,
       confidenceLabel: nextDetails.label,
       evidence: nextThesis.evidence,
     },
-    smartMoneyFlow: "הכסף עובר מהשכבה הנראית של אפליקציות AI לשכבות הקשות להחלפה: מאיצים, ציוד ייצור, חשמל, קירור ורשת. יש להעדיף חברות שבהן לפחות שניים משלושת האותות — כיסוי נתונים, מיקום 52 שבועות ונפח יחסי — זמינים ותומכים בתזה.",
+    smartMoneyFlow: "הכסף עובר מהשכבה הנראית של אפליקציות AI לשכבות הקשות להחלפה: אופטיקה, photonics, מגנטים, עיבוד rare earth, ציוד תהליך, חשמל וקירור. חברות הביקוש הגדולות הן עוגן — לא צוואר — והעדיפות היא לחברות נישה עם סימני ביקוש אך בלי צפיפות קיצונית.",
+    connections: buildBottleneckConnections(),
     generatedAt: new Date().toISOString(),
   };
 }
@@ -326,11 +440,13 @@ function enrichAiResult(result: BottleneckAnalysis, marketEvidence: MarketEviden
     return {
       ...item,
       servingCompanies: companies.length ? companies : buildFallbackAnalysis(marketEvidence).currentBottlenecks[index].servingCompanies,
+      demandAnchors: matched.demandAnchors,
       confidenceScore: details.score,
       confidenceLabel: details.label,
       evidence: matched.evidence,
       quantitativeSignals: {
         companiesCovered: details.covered.length,
+        underRadarCount: details.underRadarCount,
         avgMarketCap: formatMarketCap(
           details.covered.length
             ? details.covered.reduce((sum, evidence) => sum + (evidence.marketCap ?? 0), 0) / details.covered.length
@@ -338,6 +454,7 @@ function enrichAiResult(result: BottleneckAnalysis, marketEvidence: MarketEviden
         ),
         avg52WeekPosition: details.avgPosition,
         avgRelativeVolume: details.avgVolume,
+        crowdingPenalty: details.crowdingPenalty,
       },
     };
   };
@@ -362,8 +479,22 @@ function enrichAiResult(result: BottleneckAnalysis, marketEvidence: MarketEviden
           ...company,
           ticker: company.ticker.toUpperCase(),
           name: COMPANY_NAMES[company.ticker.toUpperCase()] ?? company.name,
+        })).length
+        ? (next.positionedCompanies ?? [])
+          .filter((company) => allowedTickers.has(company.ticker?.toUpperCase?.() ?? ""))
+          .map((company) => ({
+            ...company,
+            ticker: company.ticker.toUpperCase(),
+            name: COMPANY_NAMES[company.ticker.toUpperCase()] ?? company.name,
+          }))
+        : nextMatched.tickers.slice(0, 4).map((ticker) => ({
+          ticker,
+          name: COMPANY_NAMES[ticker] ?? ticker,
+          whyWin: "חשיפה ישירה לחוליית היצע קריטית עם חסם החלפה.",
+          marketCap: marketEvidence.find((item) => item.ticker === ticker)?.marketCapBand ?? "Unknown",
         })),
     },
+    connections: buildBottleneckConnections(),
   };
 }
 
@@ -390,15 +521,20 @@ router.get("/bottlenecks", async (req, res) => {
 כתוב בעברית. חד, ישיר, ללא מילים מיותרות. כל משפט חייב לנוע כסף. חשיבה של כסף — לא של כותרות.
 CRITICAL: החזר אך ורק JSON תקני, ללא markdown, ללא טקסט מחוץ ל-JSON.
 CRITICAL: אל תשתמש בגרשיים (") בתוך ערכי טקסט — השתמש בגרש בודד (') או תמיד סגור ערכים ב-escaped quotes.
-CRITICAL: אל תמציא טיקרים או נתוני שוק. השתמש רק בחברות שמופיעות בראיות החיות שסופקו.`;
+CRITICAL: אל תמציא טיקרים או נתוני שוק. השתמש רק בחברות שמופיעות בראיות החיות שסופקו.
+CRITICAL: חברות ענק כמו NVDA, MSFT, AMZN או META הן עוגני ביקוש בלבד — אין להציג אותן כצוואר בקבוק אלא אם הן עצמן חוליית היצע נדירה, וזה לא המקרה כאן.
+CRITICAL: חפש את החוליה הקטנה/בינונית והקשה להחלפה בתוך השרשרת, גם אם היא פחות מוכרת ופחות סחירה.
+CRITICAL: חייב להתייחס לאופטיקה/פוטוניקה/קישוריות ולמגנטים/rare earth כאשר הנתונים תומכים בהם — לא להסתפק בכותרת AI.`;
 
     const today = new Date().toLocaleDateString("he-IL", { year: "numeric", month: "long", day: "numeric" });
 
     const userPrompt = `תאריך היום: ${today}. נתח את צווארי הבקבוק הנוכחיים בשוק ההון הגלובלי לפי המסגרת הבאה:
 
-זהה 4 צווארי בקבוק שבהם ריכוז כוח אמיתי — מקומות שבהם ערך כלכלי נוצר ונלכד בשל: טכנולוגיה ייחודית, רגולציה, סקייל, קניין רוחני, נתונים, או תשתית קריטית.
+זהה 5 צווארי בקבוק שבהם ריכוז כוח אמיתי — מקומות שבהם ערך כלכלי נוצר ונלכד בשל: טכנולוגיה ייחודית, רגולציה, סקייל, קניין רוחני, נתונים, או תשתית קריטית.
 
 לכל צוואר בקבוק — ציין את החברות האמיתיות שמשרתות אותו עם טיקרים נכונים.
+תן עדיפות לחברות Small/Mid Cap ולספקי נישה. חברה גדולה יכולה להיות עוגן ביקוש, אך אינה מקבלת עדיפות רק בגלל גודל או מומנטום.
+אל תבחר צוואר רק מפני שמחירו קרוב לשיא: קנס נרטיב/צפיפות והעדף חסם פיזי, ריכוז ספקים, זמני הקמה, רישוי או switching costs.
 
 לאחר מכן — זהה את צוואר הבקבוק הבא שיתחיל להיבנות ב-6-18 חודשים הקרובים, עם החברות שמוצבות לנצל אותו לפני השוק.
 
@@ -421,8 +557,8 @@ ${evidenceSummary}
       "capitalFlow": "כמה הון זורם לכאן ולמה — ביקוש מוסדי, ETF flows, insider buying",
       "servingCompanies": [
         {
-          "ticker": "NVDA",
-          "name": "NVIDIA",
+           "ticker": "LITE",
+           "name": "Lumentum",
           "role": "תפקיד ספציפי בשירות הצוואר הזה",
           "moat": "מה מגן על מיקומה",
           "marketCap": "Large/Mid/Small"
@@ -449,6 +585,15 @@ ${evidenceSummary}
     ]
   },
   "smartMoneyFlow": "תמונת הזרימה הכוללת: מאיפה יוצא כסף חכם ולאן נכנס. איפה האסימטריה הגדולה ביותר כרגע."
+  ,
+  "connections": [
+    {
+      "from": "שם צוואר",
+      "to": "שם צוואר",
+      "relation": "איך הם קשורים",
+      "whyItMatters": "למה הקשר חשוב"
+    }
+  ]
 }`;
 
     let response;
@@ -494,6 +639,7 @@ ${evidenceSummary}
       currentBottlenecks: (parsed.currentBottlenecks as Bottleneck[]) ?? [],
       nextBottleneck: (parsed.nextBottleneck as NextBottleneck) ?? {},
       smartMoneyFlow: (parsed.smartMoneyFlow as string) ?? "",
+      connections: buildBottleneckConnections(),
       generatedAt: new Date().toISOString(),
     };
 

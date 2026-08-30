@@ -23,14 +23,17 @@ interface Bottleneck {
   servingCompanies: ServingCompany[];
   capitalFlow: string;
   whyItMatters: string;
+  demandAnchors?: string[];
   confidenceScore?: number;
   confidenceLabel?: string;
   evidence?: string[];
   quantitativeSignals?: {
     companiesCovered: number;
+    underRadarCount: number;
     avgMarketCap: string;
     avg52WeekPosition: number | null;
     avgRelativeVolume: number | null;
+    crowdingPenalty: number;
   };
 }
 
@@ -54,6 +57,12 @@ interface BottleneckAnalysis {
   currentBottlenecks: Bottleneck[];
   nextBottleneck: NextBottleneck;
   smartMoneyFlow: string;
+  connections: Array<{
+    from: string;
+    to: string;
+    relation: string;
+    whyItMatters: string;
+  }>;
   generatedAt: string;
 }
 
@@ -70,9 +79,11 @@ const URGENCY_CONFIG: Record<string, { label: string; cls: string }> = {
 };
 
 const MKTCAP_COLORS: Record<string, string> = {
-  Large: "bg-primary/10 text-primary border-primary/20",
-  Mid:   "bg-violet-500/10 text-violet-400 border-violet-500/20",
+  Unknown: "bg-muted text-muted-foreground border-border",
   Small: "bg-orange-500/10 text-orange-400 border-orange-500/20",
+  Mid:   "bg-violet-500/10 text-violet-400 border-violet-500/20",
+  Large: "bg-primary/10 text-primary border-primary/20",
+  Mega:  "bg-slate-500/10 text-slate-400 border-slate-500/20",
 };
 
 function CompanyPill({ c, onClick }: { c: ServingCompany | { ticker: string; name: string; whyWin?: string; moat?: string; marketCap: string }; onClick?: (t: string) => void }) {
@@ -168,11 +179,17 @@ function BottleneckCard({ b, idx, onSelectTicker }: { b: Bottleneck; idx: number
               </ul>
               {b.quantitativeSignals && (
                 <div className="mt-2 text-[11px] text-muted-foreground">
-                  כיסוי חי: {b.quantitativeSignals.companiesCovered} חברות · שווי ממוצע: {b.quantitativeSignals.avgMarketCap}
+                  כיסוי חי: {b.quantitativeSignals.companiesCovered} חברות · מתחת לרדאר: {b.quantitativeSignals.underRadarCount} · שווי ממוצע: {b.quantitativeSignals.avgMarketCap}
                   {b.quantitativeSignals.avg52WeekPosition !== null && ` · מיקום 52 שבועות: ${b.quantitativeSignals.avg52WeekPosition.toFixed(0)}%`}
                   {b.quantitativeSignals.avgRelativeVolume !== null && ` · נפח יחסי: ${b.quantitativeSignals.avgRelativeVolume.toFixed(2)}x`}
+                  {b.quantitativeSignals.crowdingPenalty > 0 && ` · קנס צפיפות: ${b.quantitativeSignals.crowdingPenalty}`}
                 </div>
               )}
+              {b.demandAnchors?.length ? (
+                <div className="mt-2 text-[11px] text-muted-foreground/80">
+                  עוגני ביקוש בלבד: <span className="font-mono text-foreground/80">{b.demandAnchors.join(" · ")}</span>
+                </div>
+              ) : null}
             </div>
           ) : null}
 
@@ -332,6 +349,30 @@ export function BottleneckExplorer({ onSelectTicker }: Props) {
           ))}
         </div>
       </div>
+
+      {/* Smart Money Flow */}
+      {data.connections?.length ? (
+        <Card className="border-cyan-500/20 bg-cyan-500/5">
+          <CardContent className="p-4 space-y-3">
+            <div className="text-[10px] uppercase tracking-wider text-cyan-400 font-medium flex items-center gap-1">
+              <ArrowRight className="w-3 h-3" /> קישוריות בין צווארי הבקבוק
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {data.connections.map((connection, index) => (
+                <div key={`${connection.from}-${connection.to}-${index}`} className="rounded-lg border border-cyan-500/15 bg-background/40 p-3">
+                  <div className="flex items-center gap-2 text-xs font-semibold text-foreground">
+                    <span className="truncate">{connection.from}</span>
+                    <ArrowRight className="w-3 h-3 flex-shrink-0 text-cyan-400" />
+                    <span className="truncate">{connection.to}</span>
+                  </div>
+                  <div className="text-[11px] text-cyan-300/80 mt-1">{connection.relation}</div>
+                  <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{connection.whyItMatters}</p>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {/* Smart Money Flow */}
       <Card className="border-emerald-500/20 bg-emerald-500/5">
