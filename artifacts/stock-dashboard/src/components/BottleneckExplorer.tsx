@@ -23,6 +23,15 @@ interface Bottleneck {
   servingCompanies: ServingCompany[];
   capitalFlow: string;
   whyItMatters: string;
+  confidenceScore?: number;
+  confidenceLabel?: string;
+  evidence?: string[];
+  quantitativeSignals?: {
+    companiesCovered: number;
+    avgMarketCap: string;
+    avg52WeekPosition: number | null;
+    avgRelativeVolume: number | null;
+  };
 }
 
 interface NextBottleneck {
@@ -35,6 +44,9 @@ interface NextBottleneck {
   positionedCompanies: Array<{ ticker: string; name: string; whyWin: string; marketCap: string }>;
   urgency: "high" | "medium" | "low";
   capitalFlowMap: string;
+  confidenceScore?: number;
+  confidenceLabel?: string;
+  evidence?: string[];
 }
 
 interface BottleneckAnalysis {
@@ -88,6 +100,16 @@ function CompanyPill({ c, onClick }: { c: ServingCompany | { ticker: string; nam
   );
 }
 
+function ConfidenceBadge({ score, label }: { score?: number; label?: string }) {
+  if (typeof score !== "number") return null;
+  const cls = score >= 75
+    ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+    : score >= 55
+      ? "bg-yellow-500/15 text-yellow-400 border-yellow-500/30"
+      : "bg-rose-500/15 text-rose-400 border-rose-500/30";
+  return <Badge variant="outline" className={`text-[10px] border ${cls}`}>אמינות {label ?? "בינונית"} · {score}/100</Badge>;
+}
+
 function BottleneckCard({ b, idx, onSelectTicker }: { b: Bottleneck; idx: number; onSelectTicker?: (t: string) => void }) {
   const [expanded, setExpanded] = useState(idx === 0);
 
@@ -106,6 +128,7 @@ function BottleneckCard({ b, idx, onSelectTicker }: { b: Bottleneck; idx: number
                 <Badge variant="outline" className={`text-[10px] px-2 py-0 border ${MATURITY_COLORS[b.maturityLevel] ?? ""}`}>
                   {b.maturityLevel}
                 </Badge>
+                <ConfidenceBadge score={b.confidenceScore} label={b.confidenceLabel} />
                 <span className="text-[10px] text-muted-foreground/60 flex items-center gap-1">
                   <Zap className="w-2.5 h-2.5" /> {b.powerSource}
                 </span>
@@ -136,6 +159,22 @@ function BottleneckCard({ b, idx, onSelectTicker }: { b: Bottleneck; idx: number
               <p className="text-sm text-foreground leading-snug">{b.capitalFlow}</p>
             </div>
           </div>
+
+          {b.evidence?.length ? (
+            <div className="rounded-lg border border-primary/15 bg-primary/5 p-3">
+              <div className="text-[10px] uppercase tracking-wider text-primary/70 font-medium mb-2">למה להאמין לזה</div>
+              <ul className="space-y-1 text-xs text-muted-foreground">
+                {b.evidence.map((item, evidenceIndex) => <li key={evidenceIndex}>• {item}</li>)}
+              </ul>
+              {b.quantitativeSignals && (
+                <div className="mt-2 text-[11px] text-muted-foreground">
+                  כיסוי חי: {b.quantitativeSignals.companiesCovered} חברות · שווי ממוצע: {b.quantitativeSignals.avgMarketCap}
+                  {b.quantitativeSignals.avg52WeekPosition !== null && ` · מיקום 52 שבועות: ${b.quantitativeSignals.avg52WeekPosition.toFixed(0)}%`}
+                  {b.quantitativeSignals.avgRelativeVolume !== null && ` · נפח יחסי: ${b.quantitativeSignals.avgRelativeVolume.toFixed(2)}x`}
+                </div>
+              )}
+            </div>
+          ) : null}
 
           <div>
             <div className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium mb-2 flex items-center gap-1">
@@ -321,6 +360,7 @@ export function BottleneckExplorer({ onSelectTicker }: Props) {
                     <Badge variant="outline" className={`text-[10px] border ${urgencyConf?.cls ?? ""}`}>
                       {urgencyConf?.label}
                     </Badge>
+                    <ConfidenceBadge score={data.nextBottleneck.confidenceScore} label={data.nextBottleneck.confidenceLabel} />
                     <span className="text-[11px] text-muted-foreground flex items-center gap-1">
                       <Clock className="w-3 h-3" /> {data.nextBottleneck.timeline}
                     </span>
@@ -355,6 +395,15 @@ export function BottleneckExplorer({ onSelectTicker }: Props) {
                   <p className="text-sm leading-snug">{data.nextBottleneck.capitalFlowMap}</p>
                 </div>
               </div>
+
+              {data.nextBottleneck.evidence?.length ? (
+                <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-3">
+                  <div className="text-[10px] uppercase tracking-wider text-violet-400 font-medium mb-2">ראיות מוקדמות</div>
+                  <ul className="space-y-1 text-xs text-muted-foreground">
+                    {data.nextBottleneck.evidence.map((item, evidenceIndex) => <li key={evidenceIndex}>• {item}</li>)}
+                  </ul>
+                </div>
+              ) : null}
 
               <div>
                 <div className="text-[10px] uppercase tracking-wider text-violet-400 font-medium mb-2 flex items-center gap-1">
