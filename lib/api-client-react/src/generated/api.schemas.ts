@@ -599,6 +599,7 @@ export type SectorSignalResponseSignal =
 export const SectorSignalResponseSignal = {
   hammer_daily: "hammer_daily",
   hammer_weekly: "hammer_weekly",
+  williams_daily: "williams_daily",
 } as const;
 
 export type SectorSignalMatchQualityTier =
@@ -662,6 +663,12 @@ export interface SectorSignalMatch {
   /** @nullable */
   weekClose?: number | null;
   isHammerWeekly?: boolean;
+  /** @nullable */
+  williamsR?: number | null;
+  /** @nullable */
+  williamsRPercent?: number | null;
+  /** @nullable */
+  williamsLookback?: number | null;
 }
 
 export type UnavailableSymbolReason =
@@ -700,7 +707,57 @@ export interface SectorSignalResponse {
   availabilityTrackingAvailable: boolean;
   /** @nullable */
   candleDate: string | null;
+  /**
+   * Normalized Williams %R in the -1..0 range.
+   * @nullable
+   */
+  williamsR?: number | null;
+  /**
+   * Conventional Williams %R display value in the -100..0 range.
+   * @nullable
+   */
+  williamsRPercent?: number | null;
+  williamsLookback?: number | null;
   cachedAt: string;
+}
+
+export interface MarketHeatmapItem {
+  ticker: string;
+  name: string;
+  /** @nullable */
+  price: number | null;
+  /** @nullable */
+  changePercent: number | null;
+  /** @nullable */
+  marketCap: number | null;
+  marketCapFormatted: string;
+  /** @nullable */
+  volume: number | null;
+  sector: string;
+  /** @nullable */
+  relativeVolume: number | null;
+  /** @nullable */
+  exchange: string | null;
+}
+
+export interface MarketHeatmapSector {
+  sector: string;
+  marketCap: number;
+  marketCapFormatted: string;
+  /** @nullable */
+  changePercent: number | null;
+  advances: number;
+  declines: number;
+  stocks: number;
+}
+
+export interface MarketHeatmapResponse {
+  source: string;
+  fetchedAt: string;
+  totalMarketSymbols: number;
+  scannedCount: number;
+  items: MarketHeatmapItem[];
+  sectors: MarketHeatmapSector[];
 }
 
 export type EconomicCalendarEventCountry =
@@ -873,6 +930,14 @@ export const GetStockHistoryPeriod = {
   "1y": "1y",
 } as const;
 
+export type GetMarketHeatmapParams = {
+  /**
+   * @minimum 50
+   * @maximum 800
+   */
+  limit?: number;
+};
+
 export type GetSectorSignalsParams = {
   sector?: string;
   signal?: GetSectorSignalsSignal;
@@ -884,4 +949,5 @@ export type GetSectorSignalsSignal =
 export const GetSectorSignalsSignal = {
   hammer_daily: "hammer_daily",
   hammer_weekly: "hammer_weekly",
+  williams_daily: "williams_daily",
 } as const;

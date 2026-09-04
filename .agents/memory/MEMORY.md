@@ -9,3 +9,4 @@
 - [Development schema sync](development-schema-sync.md) — a committed schema can still be absent from the dev database, silently disabling availability-history persistence.
 - [Investing calendar sourcing](investing-calendar-sourcing.md) — direct Investing POST can omit current-day rows; a cost-controlled Apify supplement provides the full list.
 - [OpenAPI codegen safety](openapi-codegen-safety.md) — Orval clears generated React client files before parsing; validate OpenAPI YAML before rerunning after failures.
+- [Market scan indicators](market-scan-indicators.md) — Williams %R uses completed 14-day candles normalized to -1..0; heatmap quotes come from TradingView Scanner with a five-minute cache.

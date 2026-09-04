@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { Search, TrendingUp, TrendingDown, Clock, Building2, Calendar, FileText, Activity, Star, RefreshCw, AlertTriangle, BarChart2, ArrowUpDown, Layers, Globe, Zap, MessageSquare, Landmark, Bell, Cloud, LogOut, ShieldCheck } from "lucide-react";
+import { Search, TrendingUp, TrendingDown, Clock, Building2, Calendar, FileText, Activity, Star, RefreshCw, AlertTriangle, BarChart2, ArrowUpDown, Layers, Globe, Grid2X2, Zap, MessageSquare, Landmark, Bell, Cloud, LogOut, ShieldCheck } from "lucide-react";
 import { useClerk, useUser } from "@clerk/react";
 import { useLocation } from "wouter";
 import { 
@@ -24,6 +24,7 @@ import { NotificationCenter } from "@/components/NotificationCenter";
 import { TradingViewChart } from "@/components/TradingViewChart";
 import { StockAnalyticsPanel } from "@/components/StockAnalytics";
 import { MarketReport } from "@/components/MarketReport";
+import { MarketHeatmap } from "@/components/MarketHeatmap";
 import { EconomicCalendar } from "@/components/EconomicCalendar";
 import { BottleneckExplorer } from "@/components/BottleneckExplorer";
 import { SocialPulse } from "@/components/SocialPulse";
@@ -33,7 +34,7 @@ import { useWatchlist } from "@/hooks/useWatchlist";
 import { useUsageTracking } from "@/hooks/useUsageTracking";
 
 const POPULAR_TICKERS = ["AAPL", "TSLA", "NVDA", "MSFT"];
-type ActiveTab = "search" | "sectors" | "market" | "economy" | "bottlenecks" | "social" | "bonds" | "alerts";
+type ActiveTab = "search" | "sectors" | "market" | "heatmap" | "economy" | "bottlenecks" | "social" | "bonds" | "alerts";
 
 function useTimeSince(isoString: string | null | undefined): string {
   const [label, setLabel] = useState("");
@@ -327,6 +328,17 @@ export default function Home() {
             סיכום יומי
           </button>
           <button
+            onClick={() => switchTab("heatmap")}
+            data-testid="tab-heatmap"
+            className={`flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
+              ${activeTab === "heatmap"
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground hover:border-border"}`}
+          >
+            <Grid2X2 className="w-3.5 h-3.5" />
+            מפת חום
+          </button>
+          <button
             onClick={() => switchTab("economy")}
             data-testid="tab-economic-calendar"
             className={`flex shrink-0 items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors -mb-px
@@ -450,6 +462,13 @@ export default function Home() {
         {visitedTabs.has("market") && (
           <div hidden={activeTab !== "market"} className="animate-in fade-in slide-in-from-bottom-2 duration-300">
             <MarketReport />
+          </div>
+        )}
+
+        {/* Market Heatmap Tab */}
+        {visitedTabs.has("heatmap") && (
+          <div hidden={activeTab !== "heatmap"} className="animate-in fade-in slide-in-from-bottom-2 duration-300">
+            <MarketHeatmap />
           </div>
         )}
 

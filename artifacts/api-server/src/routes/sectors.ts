@@ -72,6 +72,45 @@ function capTier(mc: number): "leader" | "mid" | "radar" | "speculative" {
   return "speculative";
 }
 
+const WILLIAMS_LOOKBACK = 14;
+const WILLIAMS_LOWER_BOUND = -0.75;
+const WILLIAMS_UPPER_BOUND = -0.25;
+
+type WilliamsCandle = {
+  date: string | Date;
+  high: number | null;
+  low: number | null;
+  close: number | null;
+};
+
+function calculateWilliamsR(candles: WilliamsCandle[], exchangeDate: string): {
+  normalized: number;
+  percent: number;
+  date: string;
+} | null {
+  const completed = candles
+    .filter((candle) => candle.date && candle.high != null && candle.low != null && candle.close != null)
+    .map((candle) => ({
+      ...candle,
+      dateKey: candleDateKey(candle.date),
+    }))
+    .filter((candle) => candle.dateKey < exchangeDate)
+    .sort((a, b) => a.dateKey.localeCompare(b.dateKey))
+    .slice(-WILLIAMS_LOOKBACK);
+  if (completed.length < WILLIAMS_LOOKBACK) return null;
+
+  const highestHigh = Math.max(...completed.map((candle) => candle.high!));
+  const lowestLow = Math.min(...completed.map((candle) => candle.low!));
+  const range = highestHigh - lowestLow;
+  if (!Number.isFinite(range) || range <= 0) return null;
+  const percent = -100 * ((highestHigh - completed.at(-1)!.close!) / range);
+  return {
+    normalized: percent / 100,
+    percent,
+    date: completed.at(-1)!.dateKey,
+  };
+}
+
 // ── Curated ticker lists — LARGE caps + RADAR/MID tier mixes ─────────────────
 const SECTOR_TICKERS: Record<string, string[]> = {
   "Technology": [
@@ -83,6 +122,8 @@ const SECTOR_TICKERS: Record<string, string[]> = {
     // Mid cap ($1B–$10B)
     "PCTY","TENB","APPN","DOMO","BRZE","IOT","DOCN","TOST","VEEV","MNDY",
     "AIOT","RELY","PATH","WEAV","NCNO","S","BLKB","CODA","ACMR","FORM",
+    // Optical interconnect, photonics and under-the-radar semiconductor suppliers
+    "LITE","COHR","FN","MTSI","CIEN","AAOI","ACLS","ONTO","UCTT","FORM",
     // Radar ($100M–$1B)
     "SMTC","COHU","ATEN","DIOD","VICR","KLIC","CCSI","LSCC","PLAB","CEVA",
     "SLAB","MKSI","AMSC","HIMX","SIMO","NTGR","PCYC","MFAC","IDCC","INSG",
@@ -190,6 +231,8 @@ const SECTOR_TICKERS: Record<string, string[]> = {
     // Radar
     "GEF","SLGN","BALL","OI","STLD","GPK","CLW","MERC","HWKN","KWR",
     "GMET","OMG","KOP","UAMY","LYB","CSTM","SXC","SCCO","IIIN","CENX",
+    // Rare earth, permanent magnets and specialty alloys
+    "MP","UUUU","NEO.TO","LYSDY","ATI","TMRC","UAMY",
   ],
   "Utilities": [
     // Large cap
@@ -208,6 +251,127 @@ export const SECTORS = Object.keys(SECTOR_TICKERS);
 
 router.get("/sectors/list", (_req, res) => {
   res.json({ sectors: SECTORS });
+});
+
+// ── TradingView market heatmap feed ────────────────────────────────────────────
+router.get("/market/heatmap", async (req, res) => {
+  const limit = Math.min(Math.max(parseInt((req.query.limit as string) ?? "500") || 500, 50), 800);
+  const cacheKey = `market-heatmap:tradingview:${limit}:v1`;
+  const cached = getCached(cacheKey);
+  if (cached) { res.json(cached); return; }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20_000);
+  try {
+    const response = await fetch("https://scanner.tradingview.com/america/scan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
+      body: JSON.stringify({
+        filter: [
+          { left: "exchange", operation: "in_range", right: ["AMEX", "NASDAQ", "NYSE"] },
+          { left: "is_primary", operation: "equal", right: true },
+        ],
+        options: { lang: "en" },
+        markets: ["america"],
+        symbols: { query: { types: [] }, tickers: [] },
+        columns: [
+          "name",
+          "description",
+          "close",
+          "change",
+          "market_cap_basic",
+          "volume",
+          "sector",
+          "relative_volume_10d_calc",
+        ],
+        sort: { sortBy: "market_cap_basic", sortOrder: "desc" },
+        range: [0, limit],
+      }),
+    });
+    if (!response.ok) throw new Error(`TradingView scanner returned ${response.status}`);
+    const payload = await response.json() as {
+      totalCount?: number;
+      data?: Array<{ s?: string; d?: unknown[] }>;
+    };
+    const items = (payload.data ?? []).flatMap((row) => {
+      const values = row.d ?? [];
+      const ticker = typeof values[0] === "string" ? values[0] : row.s?.split(":").at(-1);
+      if (!ticker) return [];
+      const marketCap = typeof values[4] === "number" ? values[4] : null;
+      return [{
+        ticker,
+        name: typeof values[1] === "string" ? values[1] : ticker,
+        price: typeof values[2] === "number" ? values[2] : null,
+        changePercent: typeof values[3] === "number" ? values[3] : null,
+        marketCap,
+        marketCapFormatted: marketCap != null ? fmtCap(marketCap) : "N/A",
+        volume: typeof values[5] === "number" ? values[5] : null,
+        sector: typeof values[6] === "string" && values[6] ? values[6] : "Other",
+        relativeVolume: typeof values[7] === "number" ? values[7] : null,
+        exchange: row.s?.split(":")[0] ?? null,
+      }];
+    });
+
+    const sectorMap = new Map<string, {
+      sector: string;
+      marketCap: number;
+      changeWeighted: number;
+      changeWeight: number;
+      advances: number;
+      declines: number;
+      stocks: number;
+    }>();
+    for (const item of items) {
+      const current = sectorMap.get(item.sector) ?? {
+        sector: item.sector,
+        marketCap: 0,
+        changeWeighted: 0,
+        changeWeight: 0,
+        advances: 0,
+        declines: 0,
+        stocks: 0,
+      };
+      const weight = item.marketCap ?? 0;
+      current.marketCap += weight;
+      current.changeWeighted += (item.changePercent ?? 0) * (weight || 1);
+      current.changeWeight += weight || 1;
+      current.advances += item.changePercent != null && item.changePercent > 0 ? 1 : 0;
+      current.declines += item.changePercent != null && item.changePercent < 0 ? 1 : 0;
+      current.stocks += 1;
+      sectorMap.set(item.sector, current);
+    }
+
+    const sectors = [...sectorMap.values()]
+      .map((item) => ({
+        sector: item.sector,
+        marketCap: item.marketCap,
+        marketCapFormatted: fmtCap(item.marketCap),
+        changePercent: item.changeWeight ? item.changeWeighted / item.changeWeight : null,
+        advances: item.advances,
+        declines: item.declines,
+        stocks: item.stocks,
+      }))
+      .sort((a, b) => b.marketCap - a.marketCap);
+    const result = {
+      source: "TradingView Scanner",
+      fetchedAt: new Date().toISOString(),
+      totalMarketSymbols: payload.totalCount ?? items.length,
+      scannedCount: items.length,
+      items,
+      sectors,
+    };
+    setCached(cacheKey, result, 5 * 60 * 1000);
+    res.json(result);
+  } catch (err) {
+    req.log?.error({ err }, "TradingView heatmap fetch failed");
+    res.status(502).json({
+      error: "Heatmap unavailable",
+      message: "נתוני מפת החום של TradingView אינם זמינים כרגע",
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 });
 
 router.get("/sectors/screen", async (req, res) => {
@@ -349,7 +513,7 @@ router.get("/sectors/signals", async (req, res) => {
   const requestedSector = (req.query.sector as string | undefined)?.trim() || "Technology";
   const signal = (req.query.signal as string) ?? "hammer_weekly";
 
-  const marketWideDaily = signal === "hammer_daily"
+  const marketWideDaily = (signal === "hammer_daily" || signal === "williams_daily")
     && requestedSector.toLowerCase() === "all";
   const sector = marketWideDaily ? "all" : requestedSector;
 
@@ -357,8 +521,8 @@ router.get("/sectors/signals", async (req, res) => {
     res.status(400).json({ error: "Invalid sector", message: "Invalid sector" });
     return;
   }
-  if (signal !== "hammer_weekly" && signal !== "hammer_daily") {
-    const message = "Unsupported signal. Use: hammer_daily or hammer_weekly";
+  if (signal !== "hammer_weekly" && signal !== "hammer_daily" && signal !== "williams_daily") {
+    const message = "Unsupported signal. Use: hammer_daily, hammer_weekly or williams_daily";
     res.status(400).json({ error: message, message });
     return;
   }
@@ -366,8 +530,8 @@ router.get("/sectors/signals", async (req, res) => {
   // Daily results are safe to reuse inside the same exchange-local date.
   // Weekly completion depends on the provider's live marketState (including
   // holiday and early-close sessions), so it is deliberately not cached.
-  const cacheKey = signal === "hammer_daily"
-    ? `signals:${sector}:${signal}:v5:${exchangeToday}`
+  const cacheKey = signal === "hammer_daily" || signal === "williams_daily"
+    ? `signals:${sector}:${signal}:v6:${exchangeToday}`
     : null;
   const cached = cacheKey ? getCached(cacheKey) : undefined;
   if (cached) { res.json(cached); return; }
@@ -394,6 +558,122 @@ router.get("/sectors/signals", async (req, res) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const yqMap = new Map<string, any>();
     yqArr.forEach(q => { if (q?.symbol) yqMap.set(q.symbol, q); });
+
+    if (signal === "williams_daily") {
+      const period1 = new Date(Date.now() - 100 * 86400000).toISOString().split("T")[0];
+      const williamsResults: Array<{
+        sym: string;
+        value: ReturnType<typeof calculateWilliamsR>;
+        failed: boolean;
+      }> = [];
+
+      for (let i = 0; i < symbols.length; i += 8) {
+        const batch = symbols.slice(i, i + 8);
+        const batchResults = await Promise.all(batch.map(async (sym) => {
+          try {
+            // Williams %R must use completed daily candles only.
+            const chart = await (yahooFinance as any).chart(
+              sym,
+              { period1, interval: "1d" },
+              { validateResult: false },
+            );
+            const value = calculateWilliamsR(
+              (chart?.quotes ?? []) as WilliamsCandle[],
+              exchangeToday,
+            );
+            return { sym, value, failed: !value };
+          } catch {
+            return { sym, value: null, failed: true };
+          }
+        }));
+        williamsResults.push(...batchResults);
+      }
+
+      const matches = williamsResults
+        .filter((result) => result.value
+          && result.value.normalized >= WILLIAMS_LOWER_BOUND
+          && result.value.normalized <= WILLIAMS_UPPER_BOUND)
+        .map((result) => {
+          const q = yqMap.get(result.sym);
+          const mc = q?.marketCap ?? 0;
+          const matchSector = SECTORS.find((name) => (SECTOR_TICKERS[name] ?? []).includes(result.sym)) ?? null;
+          return {
+            symbol: result.sym,
+            name: q?.longName ?? q?.shortName ?? result.sym,
+            sector: matchSector,
+            price: q?.regularMarketPrice ?? null,
+            change1d: q?.regularMarketChangePercent ?? null,
+            marketCap: mc,
+            marketCapFormatted: mc > 0 ? fmtCap(mc) : "N/A",
+            industry: q?.industry ?? null,
+            qualityTier: capTier(mc),
+            volume: q?.regularMarketVolume ?? null,
+            avgVolume: q?.averageDailyVolume3Month ?? null,
+            relVolume: (q?.regularMarketVolume && q?.averageDailyVolume3Month > 0)
+              ? q.regularMarketVolume / q.averageDailyVolume3Month : null,
+            vs52High: (q?.fiftyTwoWeekHigh && q?.regularMarketPrice)
+              ? ((q.regularMarketPrice / q.fiftyTwoWeekHigh - 1) * 100) : null,
+            vs200dma: (q?.twoHundredDayAverage && q?.regularMarketPrice)
+              ? ((q.regularMarketPrice / q.twoHundredDayAverage - 1) * 100) : null,
+            dayOpen: null,
+            dayHigh: null,
+            dayLow: null,
+            hammerDaily: false,
+            candleDate: result.value!.date,
+            candleOpen: null,
+            candleHigh: null,
+            candleLow: null,
+            candleClose: null,
+            isHammerDaily: false,
+            williamsR: result.value!.normalized,
+            williamsRPercent: result.value!.percent,
+            williamsLookback: WILLIAMS_LOOKBACK,
+          };
+        });
+
+      const observations: AvailabilityObservation[] = williamsResults.map((result) => ({
+        symbol: result.sym,
+        quoteAvailable: quoteObservedSymbols.has(result.sym)
+          ? yqMap.has(result.sym)
+          : undefined,
+        candlesAvailable: !result.failed,
+      }));
+      const availability = await trackAvailability(
+        req,
+        `signals:${sector}:${signal}`,
+        observations,
+      );
+      const failedCount = williamsResults.filter((result) => result.failed).length;
+      const quoteUnavailableCount = symbols.filter((symbol) => !yqMap.has(symbol)).length;
+      const result = {
+        sector,
+        signal,
+        matches,
+        count: matches.length,
+        scannedCount: symbols.length,
+        successfulCount: symbols.length - failedCount,
+        failedCount,
+        complete: failedCount === 0,
+        quoteUnavailableCount,
+        unavailableSymbols: availability.unavailableSymbols,
+        persistentUnavailableSymbols: availability.persistentUnavailableSymbols,
+        availabilityTrackingAvailable: availability.trackingAvailable,
+        candleDate: matches[0]?.candleDate ?? exchangeToday,
+        williamsRange: {
+          lower: WILLIAMS_LOWER_BOUND,
+          upper: WILLIAMS_UPPER_BOUND,
+          lowerPercent: WILLIAMS_LOWER_BOUND * 100,
+          upperPercent: WILLIAMS_UPPER_BOUND * 100,
+          lookback: WILLIAMS_LOOKBACK,
+        },
+        cachedAt: new Date().toISOString(),
+      };
+      if (result.complete && cacheKey) {
+        setCached(cacheKey, result, 15 * 60 * 1000);
+      }
+      res.json(result);
+      return;
+    }
 
     if (signal === "hammer_daily") {
       const period1 = new Date(Date.now() - 45 * 86400000).toISOString().split("T")[0];

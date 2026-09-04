@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
   TrendingUp, TrendingDown, RefreshCw, ArrowUpDown,
   ChevronUp, ChevronDown, Minus, ExternalLink,
-  Flame, Hammer, BarChart2, ScanLine, CalendarDays,
+  Flame, Hammer, BarChart2, ScanLine, CalendarDays, Gauge,
 } from "lucide-react";
 import {
   getGetSectorSignalsQueryKey,
@@ -93,7 +93,7 @@ const SECTORS: { en: string; he: string }[] = [
 ];
 
 type TierKey = "all" | "leader" | "mid" | "radar" | "speculative";
-type SignalKey = "unusual_volume" | "hammer_daily" | "hammer_weekly";
+type SignalKey = "unusual_volume" | "hammer_daily" | "hammer_weekly" | "williams_daily";
 type FilterMode = TierKey | SignalKey;
 
 const TIERS: { key: TierKey; label: string; color: string }[] = [
@@ -108,6 +108,7 @@ const SIGNALS: { key: SignalKey; label: string; color: string; icon: React.React
   { key: "unusual_volume", label: "ווליום חריג",   color: "text-orange-400", icon: <Flame className="w-3 h-3" /> },
   { key: "hammer_daily",   label: "פטיש יומי",     color: "text-violet-400", icon: <Hammer className="w-3 h-3" /> },
   { key: "hammer_weekly",  label: "פטיש שבועי",    color: "text-cyan-400",   icon: <Hammer className="w-3 h-3" /> },
+  { key: "williams_daily", label: "Williams %R",    color: "text-amber-400",  icon: <Gauge className="w-3 h-3" /> },
 ];
 
 const TIER_BADGE: Record<string, string> = {
@@ -121,7 +122,7 @@ const TIER_LABELS: Record<string, string> = {
   leader: "מוביל", mid: "בינוני", radar: "מתחת לראדר", speculative: "ספקולטיבי",
 };
 
-type SortKey = "marketCap" | "change1d" | "pe" | "beta" | "vs52High" | "relVolume";
+type SortKey = "marketCap" | "change1d" | "pe" | "beta" | "vs52High" | "relVolume" | "williamsR";
 
 const SORTS: { key: SortKey; label: string; signalOnly?: SignalKey }[] = [
   { key: "marketCap",  label: "שווי שוק" },
@@ -130,6 +131,7 @@ const SORTS: { key: SortKey; label: string; signalOnly?: SignalKey }[] = [
   { key: "beta",       label: "ביטא" },
   { key: "vs52High",   label: "מרחק מ-52W High" },
   { key: "relVolume",  label: "ווליום יחסי", signalOnly: "unusual_volume" },
+  { key: "williamsR",  label: "Williams %R", signalOnly: "williams_daily" },
 ];
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -195,6 +197,7 @@ export function SectorExplorer({ onSelectTicker }: Props) {
   const [sortKey, setSortKey]   = useState<SortKey>("marketCap");
   const [sortAsc, setSortAsc]   = useState(false);
   const [marketDailyRequested, setMarketDailyRequested] = useState(false);
+  const [marketWilliamsRequested, setMarketWilliamsRequested] = useState(false);
 
   // Main sector data
   const { data, isLoading, isFetching, refetch } = useQuery<SectorData>({
@@ -256,25 +259,76 @@ export function SectorExplorer({ onSelectTicker }: Props) {
       },
     },
   );
+  const {
+    data: sectorWilliamsSignalData,
+    isLoading: isSectorWilliamsLoading,
+    isFetching: isSectorWilliamsFetching,
+    isError: isSectorWilliamsError,
+    refetch: refetchSectorWilliams,
+  } = useGetSectorSignals(
+    { sector, signal: "williams_daily" },
+    {
+      query: {
+        queryKey: getGetSectorSignalsQueryKey({ sector, signal: "williams_daily" }),
+        enabled: filter === "williams_daily" && !marketWilliamsRequested,
+        staleTime: 0,
+        refetchOnMount: "always",
+      },
+    },
+  );
+  const {
+    data: marketWilliamsSignalData,
+    isLoading: isMarketWilliamsLoading,
+    isFetching: isMarketWilliamsFetching,
+    isError: isMarketWilliamsError,
+    refetch: refetchMarketWilliams,
+  } = useGetSectorSignals(
+    { sector: "all", signal: "williams_daily" },
+    {
+      query: {
+        queryKey: getGetSectorSignalsQueryKey({ sector: "all", signal: "williams_daily" }),
+        enabled: marketWilliamsRequested,
+        staleTime: 0,
+        refetchOnMount: "always",
+        retry: 1,
+      },
+    },
+  );
 
   const signalData: SignalData | undefined = filter === "hammer_weekly"
     ? weeklySignalData
-    : marketDailyRequested
+    : filter === "williams_daily"
+      ? marketWilliamsRequested
+        ? marketWilliamsSignalData
+        : sectorWilliamsSignalData
+      : marketDailyRequested
       ? marketDailySignalData
       : sectorDailySignalData;
   const isSignalLoading = filter === "hammer_weekly"
     ? isWeeklySignalLoading
-    : marketDailyRequested
+    : filter === "williams_daily"
+      ? marketWilliamsRequested
+        ? isMarketWilliamsLoading
+        : isSectorWilliamsLoading
+      : marketDailyRequested
       ? isMarketDailyLoading
       : isSectorDailyLoading;
   const isSignalFetching = filter === "hammer_weekly"
     ? isWeeklySignalFetching
-    : marketDailyRequested
+    : filter === "williams_daily"
+      ? marketWilliamsRequested
+        ? isMarketWilliamsFetching
+        : isSectorWilliamsFetching
+      : marketDailyRequested
       ? isMarketDailyFetching
       : isSectorDailyFetching;
   const isSignalError = filter === "hammer_weekly"
     ? isWeeklySignalError
-    : marketDailyRequested
+    : filter === "williams_daily"
+      ? marketWilliamsRequested
+        ? isMarketWilliamsError
+        : isSectorWilliamsError
+      : marketDailyRequested
       ? isMarketDailyError
       : isSectorDailyError;
   const isSignalIncomplete = Boolean(signalData && !signalData.complete);
@@ -287,7 +341,11 @@ export function SectorExplorer({ onSelectTicker }: Props) {
   );
   const refetchSignal = filter === "hammer_weekly"
     ? refetchWeeklySignal
-    : marketDailyRequested
+    : filter === "williams_daily"
+      ? marketWilliamsRequested
+        ? refetchMarketWilliams
+        : refetchSectorWilliams
+      : marketDailyRequested
       ? refetchMarketDaily
       : refetchSectorDaily;
 
@@ -300,15 +358,16 @@ export function SectorExplorer({ onSelectTicker }: Props) {
   }, [data]);
 
   const signalCounts = useMemo(() => {
-    if (!data?.stocks) return { unusual_volume: 0, hammer_daily: 0 };
+    if (!data?.stocks) return { unusual_volume: 0, hammer_daily: 0, williams_daily: 0 };
     const unusual = data.stocks.filter(s => (s.relVolume ?? 0) >= 2.0).length;
     const hammerD  = filter === "hammer_daily" ? (signalData?.count ?? 0) : 0;
-    return { unusual_volume: unusual, hammer_daily: hammerD };
-  }, [data, filter, signalData]);
+    const williams = filter === "williams_daily" && !marketWilliamsRequested ? (signalData?.count ?? 0) : 0;
+    return { unusual_volume: unusual, hammer_daily: hammerD, williams_daily: williams };
+  }, [data, filter, signalData, marketWilliamsRequested]);
 
   // Build the displayed list based on active filter
   const displayed = useMemo((): (SectorStock | SignalMatch)[] => {
-    if (filter === "hammer_weekly" || filter === "hammer_daily") {
+    if (filter === "hammer_weekly" || filter === "hammer_daily" || filter === "williams_daily") {
       return signalData?.matches ?? [];
     }
     if (!data?.stocks) return [];
@@ -331,7 +390,8 @@ export function SectorExplorer({ onSelectTicker }: Props) {
       if (sortKey === "pe")        { av = (a.pe != null && a.pe > 0) ? a.pe : null; bv = (b.pe != null && b.pe > 0) ? b.pe : null; }
       if (sortKey === "beta")      { av = a.beta ?? null;  bv = b.beta ?? null; }
       if (sortKey === "vs52High")  { av = a.vs52High; bv = b.vs52High; }
-      if (sortKey === "relVolume") { av = a.relVolume; bv = b.relVolume; }
+       if (sortKey === "relVolume") { av = a.relVolume; bv = b.relVolume; }
+       if (sortKey === "williamsR") { av = (a as SignalMatch).williamsR ?? null; bv = (b as SignalMatch).williamsR ?? null; }
       if (av == null && bv == null) return 0;
       if (av == null) return 1;
       if (bv == null) return -1;
@@ -354,20 +414,32 @@ export function SectorExplorer({ onSelectTicker }: Props) {
     ? Math.round((Date.now() - new Date(data.cachedAt).getTime()) / 60000)
     : null;
 
-  const isSignalLoadingActive = (filter === "hammer_weekly" || filter === "hammer_daily")
+  const isSignalLoadingActive = (filter === "hammer_weekly" || filter === "hammer_daily" || filter === "williams_daily")
     && (isSignalLoading || isSignalFetching);
 
   const showHammerCols   = filter === "hammer_daily" || filter === "hammer_weekly";
+  const showWilliamsCols = filter === "williams_daily";
   const showRelVolCol    = filter === "unusual_volume";
   const showWeeklyCandle = filter === "hammer_weekly";
 
   const runMarketDailyScan = () => {
     setFilter("hammer_daily");
+    setMarketWilliamsRequested(false);
     if (marketDailyRequested) {
       void refetchMarketDaily();
       return;
     }
     setMarketDailyRequested(true);
+  };
+
+  const runMarketWilliamsScan = () => {
+    setFilter("williams_daily");
+    setMarketDailyRequested(false);
+    if (marketWilliamsRequested) {
+      void refetchMarketWilliams();
+      return;
+    }
+    setMarketWilliamsRequested(true);
   };
 
   return (
@@ -377,7 +449,7 @@ export function SectorExplorer({ onSelectTicker }: Props) {
         {SECTORS.map(s => (
           <button
             key={s.en}
-            onClick={() => { setSector(s.en); setFilter("all"); setMarketDailyRequested(false); }}
+            onClick={() => { setSector(s.en); setFilter("all"); setMarketDailyRequested(false); setMarketWilliamsRequested(false); }}
             className={`text-xs px-3 py-1.5 rounded-full border transition-all font-medium
               ${sector === s.en
                 ? "bg-primary text-primary-foreground border-primary"
@@ -407,6 +479,27 @@ export function SectorExplorer({ onSelectTicker }: Props) {
         >
           <ScanLine className={`w-3.5 h-3.5 ml-1.5 ${(isMarketDailyLoading || isMarketDailyFetching) ? "animate-spin" : ""}`} />
           {(isMarketDailyLoading || isMarketDailyFetching) ? "סורק את השוק..." : "סרוק פטיש יומי"}
+        </Button>
+      </div>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 rounded-xl border border-amber-500/25 bg-amber-500/5 px-3 py-3">
+        <div className="space-y-0.5">
+          <div className="flex items-center gap-2 text-sm font-semibold text-amber-300">
+            <Gauge className="w-4 h-4" />
+            סורק Williams %R — כל הסקטורים
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            סורק את 14 הנרות היומיים האחרונים שהושלמו ומאתר טווח מנורמל ‎-0.75 עד ‎-0.25 (כלומר ‎-75% עד ‎-25%).
+          </p>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          onClick={runMarketWilliamsScan}
+          disabled={isMarketWilliamsLoading || isMarketWilliamsFetching}
+          className="shrink-0 bg-amber-600 text-white hover:bg-amber-500"
+        >
+          <Gauge className={`w-3.5 h-3.5 ml-1.5 ${(isMarketWilliamsLoading || isMarketWilliamsFetching) ? "animate-spin" : ""}`} />
+          {(isMarketWilliamsLoading || isMarketWilliamsFetching) ? "סורק את השוק..." : "סרוק Williams %R"}
         </Button>
       </div>
 
@@ -439,7 +532,9 @@ export function SectorExplorer({ onSelectTicker }: Props) {
               onClick={() => {
                 setFilter(sig.key);
                 setMarketDailyRequested(false);
+                setMarketWilliamsRequested(false);
                 if (sig.key === "unusual_volume") setSortKey("relVolume");
+                if (sig.key === "williams_daily") setSortKey("williamsR");
               }}
               className={`text-[11px] px-2.5 py-1 rounded-full border transition-all flex items-center gap-1
                 ${filter === sig.key
@@ -450,6 +545,7 @@ export function SectorExplorer({ onSelectTicker }: Props) {
               {sig.key === "unusual_volume" && data && <span className="opacity-60">({signalCounts.unusual_volume})</span>}
               {sig.key === "hammer_daily"   && data && <span className="opacity-60">({signalCounts.hammer_daily})</span>}
               {sig.key === "hammer_weekly" && filter === "hammer_weekly" && signalData && <span className="opacity-60">({signalData.count})</span>}
+              {sig.key === "williams_daily" && !marketWilliamsRequested && signalData && <span className="opacity-60">({signalCounts.williams_daily})</span>}
             </button>
           ))}
           <div className="mr-auto flex items-center gap-2">
@@ -459,7 +555,7 @@ export function SectorExplorer({ onSelectTicker }: Props) {
             <Button
               variant="ghost" size="icon" className="h-6 w-6"
               onClick={() => {
-                if (filter === "hammer_daily" || filter === "hammer_weekly") {
+                if (filter === "hammer_daily" || filter === "hammer_weekly" || filter === "williams_daily") {
                   void refetchSignal();
                 } else {
                   void refetch();
@@ -503,8 +599,24 @@ export function SectorExplorer({ onSelectTicker }: Props) {
           {isSignalLoadingActive && <span className="animate-pulse mr-2">⏳ סורק...</span>}
         </div>
       )}
+      {filter === "williams_daily" && (
+        <div className="flex flex-wrap items-center gap-2 text-xs bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2 text-amber-300">
+          <Gauge className="w-3.5 h-3.5 shrink-0" />
+          <span>
+            {marketWilliamsRequested ? "סריקת כל רשימות הסקטורים: " : `סקטור ${SECTORS.find((item) => item.en === sector)?.he ?? sector}: `}
+            Williams %R על {signalData?.williamsLookback ?? 14} נרות שהושלמו — הטווח המבוקש הוא ‎-0.75 עד ‎-0.25, או ‎-75% עד ‎-25% בפורמט המקובל.
+          </span>
+          {signalData?.candleDate && (
+            <span className="mr-auto flex items-center gap-1 whitespace-nowrap text-amber-300/80">
+              <CalendarDays className="w-3 h-3" />
+              נר אחרון: {signalData.candleDate}
+            </span>
+          )}
+          {isSignalLoadingActive && <span className="animate-pulse mr-auto whitespace-nowrap">סורק...</span>}
+        </div>
+      )}
 
-      {data && filter !== "hammer_daily" && filter !== "hammer_weekly" && (
+      {data && filter !== "hammer_daily" && filter !== "hammer_weekly" && filter !== "williams_daily" && (
         <div className={`rounded-lg border px-3 py-2 text-xs ${
           data.complete
             ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
@@ -531,12 +643,12 @@ export function SectorExplorer({ onSelectTicker }: Props) {
         </div>
       )}
 
-      {isSignalError && (filter === "hammer_daily" || filter === "hammer_weekly") && (
+      {isSignalError && (filter === "hammer_daily" || filter === "hammer_weekly" || filter === "williams_daily") && (
         <div className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
           הסריקה נכשלה — נסה שוב בעוד רגע.
         </div>
       )}
-      {(isSignalIncomplete || hasSignalQuoteGaps) && (filter === "hammer_daily" || filter === "hammer_weekly") && (
+      {(isSignalIncomplete || hasSignalQuoteGaps) && (filter === "hammer_daily" || filter === "hammer_weekly" || filter === "williams_daily") && (
         <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
           {isSignalIncomplete
             ? <>כיסוי נרות חלקי: {signalData?.successfulCount ?? 0} מתוך {signalData?.scannedCount ?? 0} מניות עובדו; {signalData?.failedCount ?? 0} לא החזירו נר תקין.</>
@@ -546,7 +658,7 @@ export function SectorExplorer({ onSelectTicker }: Props) {
           )}
         </div>
       )}
-      {hasPersistentSignalAvailabilityIssues && (filter === "hammer_daily" || filter === "hammer_weekly") && (
+      {hasPersistentSignalAvailabilityIssues && (filter === "hammer_daily" || filter === "hammer_weekly" || filter === "williams_daily") && (
         <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
           {signalData?.persistentUnavailableSymbols?.length ? (
             <div className="mt-1 text-amber-200/80">
@@ -557,7 +669,7 @@ export function SectorExplorer({ onSelectTicker }: Props) {
           ) : null}
         </div>
       )}
-      {isSignalAvailabilityTrackingUnavailable && (filter === "hammer_daily" || filter === "hammer_weekly") && (
+      {isSignalAvailabilityTrackingUnavailable && (filter === "hammer_daily" || filter === "hammer_weekly" || filter === "williams_daily") && (
         <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
           בדיקת תחזוקה זמנית אינה זמינה; הכיסוי הנוכחי מוצג, אך כשל מתמשך לא יתועד עד שהחיבור יחזור.
         </div>
@@ -597,12 +709,15 @@ export function SectorExplorer({ onSelectTicker }: Props) {
       ) : sorted.length === 0 ? (
         <div className="text-center py-12 space-y-2">
           <p className="text-sm text-muted-foreground">
-            {filter === "hammer_daily"
+              {filter === "hammer_daily"
               ? marketDailyRequested
                 ? "לא נמצאו מניות עם תצורת פטיש ביום המסחר הקודם בסריקת השוק."
                 : "לא נמצאו מניות עם תצורת פטיש ביום המסחר הקודם בסקטור זה."
               :
              filter === "hammer_weekly"  ? "לא נמצאו מניות עם תצורת פטיש שבועי." :
+              filter === "williams_daily" ? marketWilliamsRequested
+                ? "לא נמצאו מניות בטווח Williams %R המבוקש בסריקת השוק."
+                : "לא נמצאו מניות בטווח Williams %R המבוקש בסקטור זה." :
              filter === "unusual_volume" ? "לא נמצאו מניות עם ווליום חריג כרגע." :
              filter === "radar"          ? "לא נמצאו מניות בטווח $100M–$1B בסקטור זה." :
              "לא נמצאו מניות."}
@@ -621,6 +736,7 @@ export function SectorExplorer({ onSelectTicker }: Props) {
                 <th className="text-right pb-2 pr-3 font-medium whitespace-nowrap">שווי שוק</th>
                 <th className="text-right pb-2 pr-3 font-medium">מחיר</th>
                 <th className="text-right pb-2 pr-3 font-medium">שינוי</th>
+                 {showWilliamsCols && <th className="text-right pb-2 pr-3 font-medium whitespace-nowrap text-amber-400">Williams %R</th>}
                 {showRelVolCol && <th className="text-right pb-2 pr-3 font-medium whitespace-nowrap text-orange-400">ווליום יחסי</th>}
                 {showRelVolCol && <th className="text-right pb-2 pr-3 font-medium whitespace-nowrap">נפח</th>}
                 {!showRelVolCol && !showHammerCols && <th className="text-right pb-2 pr-3 font-medium">P/E</th>}
@@ -683,6 +799,18 @@ export function SectorExplorer({ onSelectTicker }: Props) {
                           : "—"}
                       </span>
                     </td>
+
+                    {/* Williams %R */}
+                    {showWilliamsCols && (
+                      <td className="py-2 pr-3 text-right font-mono whitespace-nowrap">
+                        {sw.williamsR != null ? (
+                          <span className="text-amber-300" title={`מנורמל: ${sw.williamsR.toFixed(3)}`}>
+                            {sw.williamsRPercent != null ? `${sw.williamsRPercent.toFixed(1)}%` : `${(sw.williamsR * 100).toFixed(1)}%`}
+                            <span className="block text-[9px] text-muted-foreground/60">{sw.williamsR.toFixed(3)}</span>
+                          </span>
+                        ) : <span className="text-muted-foreground/40">—</span>}
+                      </td>
+                    )}
 
                     {/* Unusual volume columns */}
                     {showRelVolCol && (
@@ -793,6 +921,11 @@ export function SectorExplorer({ onSelectTicker }: Props) {
               </>
             )}
             {filter === "hammer_weekly"  && <><Hammer className="w-3 h-3 inline mr-1 text-cyan-400/50" />נר שבועי אחרון — {signalData?.count ?? 0} מתוך {signalData?.scannedCount ?? 0} מניות</>}
+            {filter === "williams_daily" && (
+              <><Gauge className="w-3 h-3 inline mr-1 text-amber-400/50" />
+                Williams %R ‎-75% עד ‎-25% — {marketWilliamsRequested ? "סריקת כל רשימות הסקטורים" : "סריקת סקטור"} · {signalData?.count ?? 0} מתוך {signalData?.scannedCount ?? 0} מניות
+              </>
+            )}
             {isTier(filter) && "Yahoo Finance • cache 30 דקות"}
           </span>
           <span>לחץ על שורה לניתוח מלא</span>
@@ -811,6 +944,21 @@ export function SectorExplorer({ onSelectTicker }: Props) {
               <div className="shrink-0">
                 <span className="text-emerald-500">ירוק</span> = close &gt; open &nbsp;|&nbsp;
                 <span className="text-rose-500">אדום</span> = close &lt; open
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      {showWilliamsCols && (
+        <Card className="border-dashed border-amber-500/25">
+          <CardContent className="py-3 px-4">
+            <div className="flex flex-wrap items-start gap-x-6 gap-y-2 text-[10px] text-muted-foreground/70">
+              <div className="flex items-center gap-1.5">
+                <Gauge className="w-3 h-3 text-amber-400/70" />
+                <span>Williams %R מודד את מיקום הסגירה בתוך טווח 14 הנרות האחרונים. כאן ‎-0.25 עד ‎-0.75 הוא אותו טווח כמו ‎-25% עד ‎-75% בערך המקובל.</span>
+              </div>
+              <div className="text-amber-300/80">
+                מבוסס על נרות שהושלמו בלבד · לא אות תוך־יומי
               </div>
             </div>
           </CardContent>

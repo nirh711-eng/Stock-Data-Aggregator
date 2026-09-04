@@ -24,12 +24,14 @@ import type {
   DeepAnalysis,
   EconomicCalendarResponse,
   ErrorResponse,
+  GetMarketHeatmapParams,
   GetSectorSignalsParams,
   GetStockHistoryParams,
   HealthStatus,
   MarketAlertScanRequest,
   MarketAlertScanResponse,
   MarketDailyReport,
+  MarketHeatmapResponse,
   SectorSignalResponse,
   StockAnalytics,
   StockData,
@@ -934,6 +936,104 @@ export function useGetMarketDailyReport<
 }
 
 /**
+ * Returns current U.S. equity quotes, market-cap weights, sectors and breadth metrics from the public TradingView scanner. Results are cached for five minutes.
+ * @summary Get a TradingView-powered market heatmap
+ */
+export const getGetMarketHeatmapUrl = (params?: GetMarketHeatmapParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/market/heatmap?${stringifiedParams}`
+    : `/api/market/heatmap`;
+};
+
+export const getMarketHeatmap = async (
+  params?: GetMarketHeatmapParams,
+  options?: RequestInit,
+): Promise<MarketHeatmapResponse> => {
+  return customFetch<MarketHeatmapResponse>(getGetMarketHeatmapUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetMarketHeatmapQueryKey = (
+  params?: GetMarketHeatmapParams,
+) => {
+  return [`/api/market/heatmap`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetMarketHeatmapQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMarketHeatmap>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: GetMarketHeatmapParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getMarketHeatmap>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetMarketHeatmapQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getMarketHeatmap>>
+  > = ({ signal }) => getMarketHeatmap(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMarketHeatmap>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetMarketHeatmapQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMarketHeatmap>>
+>;
+export type GetMarketHeatmapQueryError = ErrorType<ErrorResponse>;
+
+/**
+ * @summary Get a TradingView-powered market heatmap
+ */
+
+export function useGetMarketHeatmap<
+  TData = Awaited<ReturnType<typeof getMarketHeatmap>>,
+  TError = ErrorType<ErrorResponse>,
+>(
+  params?: GetMarketHeatmapParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getMarketHeatmap>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetMarketHeatmapQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
  * Returns economic calendar events published by Investing.com, including recent results and upcoming consensus expectations.
  * @summary Get important U.S. and Israeli economic releases from Investing.com
  */
@@ -1010,7 +1110,7 @@ export function useGetEconomicCalendar<
 }
 
 /**
- * Returns stocks matching a candle signal. Daily hammer scans use the latest completed trading session before the exchange-local current date; pass sector=all for a market-wide scan.
+ * Returns stocks matching a candle signal. Daily scans use completed trading sessions before the exchange-local current date; Williams %R is normalized to -1..0 and the default scan band is -0.75..-0.25. Pass sector=all for a market-wide scan.
  * @summary Scan completed daily or weekly candles for a signal
  */
 export const getGetSectorSignalsUrl = (params?: GetSectorSignalsParams) => {

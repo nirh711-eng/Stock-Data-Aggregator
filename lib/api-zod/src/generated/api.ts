@@ -594,6 +594,54 @@ export const GetMarketDailyReportResponse = zod.object({
 });
 
 /**
+ * Returns current U.S. equity quotes, market-cap weights, sectors and breadth metrics from the public TradingView scanner. Results are cached for five minutes.
+ * @summary Get a TradingView-powered market heatmap
+ */
+export const getMarketHeatmapQueryLimitDefault = 500;
+export const getMarketHeatmapQueryLimitMin = 50;
+export const getMarketHeatmapQueryLimitMax = 800;
+
+export const GetMarketHeatmapQueryParams = zod.object({
+  limit: zod.coerce
+    .number()
+    .min(getMarketHeatmapQueryLimitMin)
+    .max(getMarketHeatmapQueryLimitMax)
+    .default(getMarketHeatmapQueryLimitDefault),
+});
+
+export const GetMarketHeatmapResponse = zod.object({
+  source: zod.string(),
+  fetchedAt: zod.coerce.date(),
+  totalMarketSymbols: zod.number(),
+  scannedCount: zod.number(),
+  items: zod.array(
+    zod.object({
+      ticker: zod.string(),
+      name: zod.string(),
+      price: zod.number().nullable(),
+      changePercent: zod.number().nullable(),
+      marketCap: zod.number().nullable(),
+      marketCapFormatted: zod.string(),
+      volume: zod.number().nullable(),
+      sector: zod.string(),
+      relativeVolume: zod.number().nullable(),
+      exchange: zod.string().nullable(),
+    }),
+  ),
+  sectors: zod.array(
+    zod.object({
+      sector: zod.string(),
+      marketCap: zod.number(),
+      marketCapFormatted: zod.string(),
+      changePercent: zod.number().nullable(),
+      advances: zod.number(),
+      declines: zod.number(),
+      stocks: zod.number(),
+    }),
+  ),
+});
+
+/**
  * Returns economic calendar events published by Investing.com, including recent results and upcoming consensus expectations.
  * @summary Get important U.S. and Israeli economic releases from Investing.com
  */
@@ -662,7 +710,7 @@ export const GetEconomicCalendarResponse = zod.object({
 });
 
 /**
- * Returns stocks matching a candle signal. Daily hammer scans use the latest completed trading session before the exchange-local current date; pass sector=all for a market-wide scan.
+ * Returns stocks matching a candle signal. Daily scans use completed trading sessions before the exchange-local current date; Williams %R is normalized to -1..0 and the default scan band is -0.75..-0.25. Pass sector=all for a market-wide scan.
  * @summary Scan completed daily or weekly candles for a signal
  */
 export const getSectorSignalsQuerySectorDefault = `Technology`;
@@ -671,13 +719,13 @@ export const getSectorSignalsQuerySignalDefault = `hammer_weekly`;
 export const GetSectorSignalsQueryParams = zod.object({
   sector: zod.coerce.string().default(getSectorSignalsQuerySectorDefault),
   signal: zod
-    .enum(["hammer_daily", "hammer_weekly"])
+    .enum(["hammer_daily", "hammer_weekly", "williams_daily"])
     .default(getSectorSignalsQuerySignalDefault),
 });
 
 export const GetSectorSignalsResponse = zod.object({
   sector: zod.string(),
-  signal: zod.enum(["hammer_daily", "hammer_weekly"]),
+  signal: zod.enum(["hammer_daily", "hammer_weekly", "williams_daily"]),
   matches: zod.array(
     zod.object({
       symbol: zod.string(),
@@ -709,6 +757,9 @@ export const GetSectorSignalsResponse = zod.object({
       weekLow: zod.number().nullish(),
       weekClose: zod.number().nullish(),
       isHammerWeekly: zod.boolean().optional(),
+      williamsR: zod.number().nullish(),
+      williamsRPercent: zod.number().nullish(),
+      williamsLookback: zod.number().nullish(),
     }),
   ),
   count: zod.number(),
@@ -753,6 +804,15 @@ export const GetSectorSignalsResponse = zod.object({
       "Whether availability history was saved successfully for this scan.",
     ),
   candleDate: zod.string().nullable(),
+  williamsR: zod
+    .number()
+    .nullish()
+    .describe("Normalized Williams %R in the -1..0 range."),
+  williamsRPercent: zod
+    .number()
+    .nullish()
+    .describe("Conventional Williams %R display value in the -100..0 range."),
+  williamsLookback: zod.number().nullish(),
   cachedAt: zod.string(),
 });
 
