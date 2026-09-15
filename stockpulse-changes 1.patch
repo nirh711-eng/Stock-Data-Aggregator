@@ -1,0 +1,491 @@
+diff --git a/artifacts/api-server/package.json b/artifacts/api-server/package.json
+index 91cc21a..de84bd3 100644
+--- a/artifacts/api-server/package.json
++++ b/artifacts/api-server/package.json
+@@ -21,6 +21,8 @@
+     "cors": "^2",
+     "drizzle-orm": "catalog:",
+     "express": "^5",
++    "express-rate-limit": "^8.7.0",
++    "helmet": "^8.3.0",
+     "http-proxy-middleware": "^4.2.0",
+     "jsonrepair": "^3.14.0",
+     "pino": "^9",
+diff --git a/artifacts/api-server/src/app.ts b/artifacts/api-server/src/app.ts
+index 09cc36d..39b5bc7 100644
+--- a/artifacts/api-server/src/app.ts
++++ b/artifacts/api-server/src/app.ts
+@@ -1,4 +1,5 @@
+ import express, { type Express } from "express";
++import helmet from "helmet";
+ import pinoHttp from "pino-http";
+ import { clerkMiddleware } from "@clerk/express";
+ import { publishableKeyFromHost } from "@clerk/shared/keys";
+@@ -9,9 +10,24 @@ import {
+   clerkProxyMiddleware,
+   getClerkProxyHost,
+ } from "./middlewares/clerkProxyMiddleware";
++import { generalApiLimiter } from "./middlewares/rateLimiters";
+ 
+ const app: Express = express();
+ 
++// Baseline security headers (nosniff, no X-Powered-By, HSTS, etc.).
++// This app only ever returns JSON — it does not render HTML pages that get
++// embedded in an iframe (the frontend is a separate Vite app) — so we turn
++// off Content-Security-Policy and cross-origin-embedder-policy here rather
++// than inherit helmet's strict HTML-oriented defaults, which are meant for
++// servers that render pages and could otherwise surprise a future change
++// that does serve HTML (e.g. an error page) from this server.
++app.use(
++  helmet({
++    contentSecurityPolicy: false,
++    crossOriginEmbedderPolicy: false,
++  }),
++);
++
+ app.use(
+   pinoHttp({
+     logger,
+@@ -43,6 +59,6 @@ app.use(
+   })),
+ );
+ 
+-app.use("/api", router);
++app.use("/api", generalApiLimiter, router);
+ 
+ export default app;
+diff --git a/artifacts/api-server/src/routes/alerts.ts b/artifacts/api-server/src/routes/alerts.ts
+index 71cce01..66c8bf1 100644
+--- a/artifacts/api-server/src/routes/alerts.ts
++++ b/artifacts/api-server/src/routes/alerts.ts
+@@ -18,6 +18,7 @@ import {
+   fetchArticleMetadata,
+   type ArticleType,
+ } from "../lib/article-metadata";
++import { aiLimiter } from "../middlewares/rateLimiters";
+ 
+ const router = Router();
+ 
+@@ -435,7 +436,7 @@ router.post("/alerts/article-metadata", async (req, res) => {
+   }
+ });
+ 
+-router.post("/alerts/scan", async (req, res) => {
++router.post("/alerts/scan", aiLimiter, async (req, res) => {
+   const rawWatchlist = Array.isArray(req.body?.watchlist) ? req.body.watchlist as WatchItem[] : [];
+   const rawTrackedArticles = Array.isArray(req.body?.trackedArticles)
+     ? req.body.trackedArticles as TrackedArticle[]
+diff --git a/artifacts/api-server/src/routes/bottlenecks.ts b/artifacts/api-server/src/routes/bottlenecks.ts
+index 259f700..c1d8068 100644
+--- a/artifacts/api-server/src/routes/bottlenecks.ts
++++ b/artifacts/api-server/src/routes/bottlenecks.ts
+@@ -2,6 +2,7 @@ import { Router } from "express";
+ import { openai } from "@workspace/integrations-openai-ai-server";
+ import { jsonrepair } from "jsonrepair";
+ import yahooFinanceMod from "yahoo-finance2";
++import { aiLimiter } from "../middlewares/rateLimiters";
+ 
+ const router = Router();
+ // eslint-disable-next-line @typescript-eslint/no-explicit-any
+@@ -507,7 +508,7 @@ function robustParse(str: string): Record<string, unknown> | null {
+   try { return JSON.parse(jsonrepair(extracted)); } catch { return null; }
+ }
+ 
+-router.get("/bottlenecks", async (req, res) => {
++router.get("/bottlenecks", aiLimiter, async (req, res) => {
+   if (_cache && Date.now() < _cache.expires) {
+     res.json(_cache.data);
+     return;
+diff --git a/artifacts/api-server/src/routes/daily-analysis.ts b/artifacts/api-server/src/routes/daily-analysis.ts
+index 7cacfe6..0553d85 100644
+--- a/artifacts/api-server/src/routes/daily-analysis.ts
++++ b/artifacts/api-server/src/routes/daily-analysis.ts
+@@ -4,6 +4,7 @@ import { openai } from "@workspace/integrations-openai-ai-server";
+ import { GetStockDailyAnalysisParams } from "@workspace/api-zod";
+ import { jsonrepair } from "jsonrepair";
+ import { fetchFinnhub, fetchTechnicals, fetchNewsSentiment, fetchMarketaux, fetchReddit } from "../lib/enrichment";
++import { aiLimiter } from "../middlewares/rateLimiters";
+ 
+ // eslint-disable-next-line @typescript-eslint/no-explicit-any
+ const YahooFinance = yahooFinanceMod as any;
+@@ -21,7 +22,7 @@ function robustParseJson(str: string): Record<string, unknown> | null {
+   return null;
+ }
+ 
+-router.get("/stocks/:ticker/daily-analysis", async (req, res) => {
++router.get("/stocks/:ticker/daily-analysis", aiLimiter, async (req, res) => {
+   const parse = GetStockDailyAnalysisParams.safeParse(req.params);
+   if (!parse.success) {
+     res.status(400).json({ error: "Bad request", message: "Invalid ticker" });
+diff --git a/artifacts/api-server/src/routes/deep-analysis.ts b/artifacts/api-server/src/routes/deep-analysis.ts
+index efbf39f..2efb015 100644
+--- a/artifacts/api-server/src/routes/deep-analysis.ts
++++ b/artifacts/api-server/src/routes/deep-analysis.ts
+@@ -10,6 +10,7 @@ import {
+   type RedditData,
+ } from "../lib/enrichment";
+ import pino from "pino";
++import { aiLimiter } from "../middlewares/rateLimiters";
+ 
+ const bgLogger = pino({ level: "info" });
+ 
+@@ -755,7 +756,7 @@ ${dataContext}
+ // Subsequent calls while running: returns {status:"running"}.
+ // After completion: returns full result from cache.
+ // On error: returns {status:"error", message}.
+-router.get("/stocks/:ticker/deep-analysis", (req, res) => {
++router.get("/stocks/:ticker/deep-analysis", aiLimiter, (req, res) => {
+   const parse = GetStockDeepAnalysisParams.safeParse(req.params);
+   if (!parse.success) {
+     res.status(400).json({ error: "Bad request", message: "Invalid ticker" });
+@@ -766,7 +767,7 @@ router.get("/stocks/:ticker/deep-analysis", (req, res) => {
+   res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+   res.set("Pragma", "no-cache");
+ 
+-  const upperTicker = req.params.ticker.toUpperCase();
++  const upperTicker = parse.data.ticker.toUpperCase();
+ 
+   // Serve from cache immediately
+   const cached = getDeepCache(upperTicker);
+diff --git a/artifacts/api-server/src/routes/market-report.ts b/artifacts/api-server/src/routes/market-report.ts
+index ff3d22d..ac830d3 100644
+--- a/artifacts/api-server/src/routes/market-report.ts
++++ b/artifacts/api-server/src/routes/market-report.ts
+@@ -4,6 +4,7 @@ import { openai } from "@workspace/integrations-openai-ai-server";
+ import { jsonrepair } from "jsonrepair";
+ import { fetchFredMacro, fetchMarketaux } from "../lib/enrichment";
+ import https from "https";
++import { aiLimiter } from "../middlewares/rateLimiters";
+ 
+ // eslint-disable-next-line @typescript-eslint/no-explicit-any
+ const YahooFinance = yahooFinanceMod as any;
+@@ -207,7 +208,7 @@ function buildImpliedSectorRotation(
+     .sort((a, b) => b.avgPrePct - a.avgPrePct);
+ }
+ 
+-router.get("/market/daily-report", async (req, res) => {
++router.get("/market/daily-report", aiLimiter, async (req, res) => {
+   const cacheKey = "market_daily_report_v4";
+   const cached = getCache<unknown>(cacheKey);
+   if (cached) { res.json(cached); return; }
+diff --git a/artifacts/api-server/src/routes/stocks.ts b/artifacts/api-server/src/routes/stocks.ts
+index 09d2e5b..8dc2fba 100644
+--- a/artifacts/api-server/src/routes/stocks.ts
++++ b/artifacts/api-server/src/routes/stocks.ts
+@@ -9,6 +9,7 @@ import {
+   GetStockHistoryQueryParams,
+ } from "@workspace/api-zod";
+ import { isoWeekStart, latestCompletedWeekStart } from "../lib/stock-week-completion.js";
++import { aiLimiter } from "../middlewares/rateLimiters";
+ import {
+   cacheCompanySpecialization,
+   getCompanyProfileDetails,
+@@ -35,6 +36,37 @@ function setStockCache(key: string, data: unknown) { _stockCache.set(key, { data
+ const ANALYTICS_CACHE_TTL_MS = 15 * 60 * 1000;
+ const PROFILE_CACHE_TTL_MS = 30 * 60 * 1000;
+ 
++// Shared cache for the raw Yahoo Finance quote + quoteSummary for a ticker.
++// Both /stocks/:ticker and /stocks/:ticker/analytics need a quote() call and
++// an overlapping set of quoteSummary modules (financialData, defaultKeyStatistics
++// are requested by both). Since the frontend loads both endpoints in parallel
++// for the same ticker on every dashboard visit, without this shared cache
++// every page load was hitting Yahoo Finance for the same quote/summary twice.
++// The module list below is the union of what either route needs, so both can
++// be served from a single fetch.
++const YAHOO_RAW_CACHE_TTL_MS = 5 * 60 * 1000;
++type YahooRaw = {
++  // eslint-disable-next-line @typescript-eslint/no-explicit-any
++  quote: PromiseSettledResult<any>;
++  // eslint-disable-next-line @typescript-eslint/no-explicit-any
++  quoteSummary: PromiseSettledResult<any>;
++};
++const _yahooRawCache = new Map<string, { data: YahooRaw; ts: number }>();
++async function getOrFetchYahooRaw(upperTicker: string): Promise<YahooRaw> {
++  const cached = _yahooRawCache.get(upperTicker);
++  if (cached && Date.now() - cached.ts <= YAHOO_RAW_CACHE_TTL_MS) return cached.data;
++
++  const [quote, quoteSummary] = await Promise.allSettled([
++    yahooFinance.quote(upperTicker),
++    yahooFinance.quoteSummary(upperTicker, {
++      modules: ["assetProfile", "financialData", "defaultKeyStatistics", "calendarEvents", "incomeStatementHistory"],
++    }),
++  ]);
++  const data: YahooRaw = { quote, quoteSummary };
++  _yahooRawCache.set(upperTicker, { data, ts: Date.now() });
++  return data;
++}
++
+ function asNumber(value: unknown): number | null {
+   if (typeof value === "number" && Number.isFinite(value)) return value;
+   if (value && typeof value === "object" && "raw" in value) {
+@@ -134,12 +166,7 @@ router.get("/stocks/:ticker", async (req, res) => {
+   if (cached) { res.json(cached); return; }
+ 
+   try {
+-    const [quote, quoteSummary] = await Promise.allSettled([
+-      yahooFinance.quote(upperTicker),
+-      yahooFinance.quoteSummary(upperTicker, {
+-        modules: ["assetProfile", "financialData", "defaultKeyStatistics", "calendarEvents", "incomeStatementHistory"],
+-      }),
+-    ]);
++    const { quote, quoteSummary } = await getOrFetchYahooRaw(upperTicker);
+ 
+     if (quote.status === "rejected") {
+       res.status(404).json({ error: "Not found", message: `Ticker ${upperTicker} not found` });
+@@ -212,29 +239,15 @@ router.get("/stocks/:ticker", async (req, res) => {
+ 
+     const profile = qs?.assetProfile;
+ 
+-    let aiSummary: string | null = null;
+-    try {
+-      const summaryPrompt = `You are a professional financial analyst. In 2-3 concise sentences, provide a brief investment snapshot for ${upperTicker} (${q.longName ?? q.shortName ?? upperTicker}).
+-Current data:
+-- Price: ${q.currency ?? "USD"} ${q.regularMarketPrice}
+-- Change: ${q.regularMarketChangePercent?.toFixed(2)}% today
+-- Market Cap: ${formatMarketCap(marketCap)}
+-- P/E Ratio: ${q.trailingPE?.toFixed(1) ?? "N/A"}
+-- Sector: ${profile?.sector ?? "N/A"}
+-- Industry: ${profile?.industry ?? "N/A"}
+-- Revenue Growth: ${qs?.financialData?.revenueGrowth != null ? (qs.financialData.revenueGrowth * 100).toFixed(1) + "%" : "N/A"}
+-
+-Focus on key strengths, risks, and what investors should watch.`;
+-
+-      const response = await openai.chat.completions.create({
+-        model: "gpt-5-mini",
+-        max_completion_tokens: 200,
+-        messages: [{ role: "user", content: summaryPrompt }],
+-      });
+-      aiSummary = response.choices[0]?.message?.content ?? null;
+-    } catch (err) {
+-      req.log?.warn({ err }, "AI summary failed, continuing without it");
+-    }
++    // AI summary is intentionally NOT generated here. It used to be generated
++    // synchronously in this request, blocking the return of basic price/quote
++    // data on an OpenAI round-trip (multi-second latency on every ticker load).
++    // The frontend already fetches the AI summary separately and in parallel
++    // via GET /api/stocks/:ticker/summary (useGetStockSummary), so generating
++    // it again here was pure duplicate cost and duplicate latency.
++    // Keeping the field (as null) preserves the response shape for any
++    // consumer that still reads stockData.aiSummary as a fallback.
++    const aiSummary: string | null = null;
+ 
+     const stockData = {
+       ticker: upperTicker,
+@@ -283,7 +296,7 @@ Focus on key strengths, risks, and what investors should watch.`;
+   }
+ });
+ 
+-router.get("/stocks/:ticker/summary", async (req, res) => {
++router.get("/stocks/:ticker/summary", aiLimiter, async (req, res) => {
+   const parse = GetStockSummaryParams.safeParse(req.params);
+   if (!parse.success) {
+     res.status(400).json({ error: "Bad request", message: "Invalid ticker" });
+@@ -294,10 +307,7 @@ router.get("/stocks/:ticker/summary", async (req, res) => {
+   const upperTicker = ticker.toUpperCase();
+ 
+   try {
+-    const [quoteResult, qsResult] = await Promise.allSettled([
+-      yahooFinance.quote(upperTicker),
+-      yahooFinance.quoteSummary(upperTicker, { modules: ["assetProfile", "financialData"] }),
+-    ]);
++    const { quote: quoteResult, quoteSummary: qsResult } = await getOrFetchYahooRaw(upperTicker);
+ 
+     const q = quoteResult.status === "fulfilled" ? quoteResult.value : null;
+     const qsData = qsResult.status === "fulfilled" ? qsResult.value : null;
+@@ -324,7 +334,7 @@ Focus on key strengths, risks, and what investors should watch.`;
+   }
+ });
+ 
+-router.get("/stocks/:ticker/profile", async (req, res) => {
++router.get("/stocks/:ticker/profile", aiLimiter, async (req, res) => {
+   const parse = GetStockDataParams.safeParse(req.params);
+   if (!parse.success) {
+     res.status(400).json({ error: "Bad request", message: "Invalid ticker" });
+@@ -431,16 +441,16 @@ router.get("/stocks/:ticker/analytics", async (req, res) => {
+   }
+ 
+   try {
+-    const [quoteResult, summaryResult, historyResult] = await Promise.allSettled([
+-      yahooFinance.quote(upperTicker),
+-      yahooFinance.quoteSummary(upperTicker, {
+-        modules: ["financialData", "defaultKeyStatistics"],
+-      }),
++    const [{ quote: quoteResult, quoteSummary: summaryResult }, historyResult] = await Promise.all([
++      getOrFetchYahooRaw(upperTicker),
+       yahooFinance.historical(upperTicker, {
+         period1: new Date(Date.now() - 400 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
+         period2: new Date(),
+         interval: "1d",
+-      }),
++      }).then(
++        (value: unknown) => ({ status: "fulfilled" as const, value }),
++        (reason: unknown) => ({ status: "rejected" as const, reason }),
++      ),
+     ]);
+ 
+     if (quoteResult.status === "rejected") {
+diff --git a/artifacts/stock-dashboard/src/App.tsx b/artifacts/stock-dashboard/src/App.tsx
+index d5e2d37..d5c8396 100644
+--- a/artifacts/stock-dashboard/src/App.tsx
++++ b/artifacts/stock-dashboard/src/App.tsx
+@@ -12,7 +12,22 @@ import { publishableKeyFromHost } from "@clerk/react/internal";
+ import { shadcn } from "@clerk/themes";
+ import { useLocation } from "wouter";
+ 
+-const queryClient = new QueryClient();
++// Sane global defaults for every query in the app. Without these, React
++// Query's own defaults apply: staleTime 0 and refetchOnWindowFocus true,
++// which together mean EVERY query (including the expensive AI-backed ones)
++// refetches from scratch every time the browser tab regains focus, on top
++// of every mount. Individual components can still opt into more aggressive
++// freshness (e.g. BondYields' refetchInterval) or set a longer/shorter
++// staleTime for their specific data.
++const queryClient = new QueryClient({
++  defaultOptions: {
++    queries: {
++      staleTime: 60 * 1000, // 1 minute: data isn't refetched just for being "old" more often than this
++      refetchOnWindowFocus: false, // stop refetching everything just from switching browser tabs
++      retry: 1, // fail fast instead of the default 3 silent retries
++    },
++  },
++});
+ const basePath = import.meta.env.BASE_URL.replace(/\/$/, "");
+ const clerkPubKey = publishableKeyFromHost(
+   window.location.hostname,
+diff --git a/artifacts/stock-dashboard/src/pages/Home.tsx b/artifacts/stock-dashboard/src/pages/Home.tsx
+index 3fce4f1..c6897cf 100644
+--- a/artifacts/stock-dashboard/src/pages/Home.tsx
++++ b/artifacts/stock-dashboard/src/pages/Home.tsx
+@@ -128,6 +128,7 @@ export default function Home() {
+     query: {
+       enabled: !!activeTicker,
+       queryKey: getGetStockDataQueryKey(activeTicker || ""),
++      staleTime: 30 * 1000, // price/quote data: fine to reuse for 30s
+     },
+   });
+ 
+@@ -135,6 +136,7 @@ export default function Home() {
+     query: {
+       enabled: !!activeTicker,
+       queryKey: getGetStockSummaryQueryKey(activeTicker || ""),
++      staleTime: 15 * 60 * 1000, // AI-generated summary: expensive to regenerate, doesn't change minute to minute
+     },
+   });
+ 
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index a08c7c0..6461881 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -183,7 +183,7 @@ importers:
+         version: link:../../lib/integrations-openai-ai-server
+       axios:
+         specifier: ^1.15.2
+-        version: 1.15.2
++        version: 1.15.2(debug@4.4.3)
+       cookie-parser:
+         specifier: ^1.4.7
+         version: 1.4.7
+@@ -196,6 +196,12 @@ importers:
+       express:
+         specifier: ^5
+         version: 5.2.1
++      express-rate-limit:
++        specifier: ^8.7.0
++        version: 8.7.0(express@5.2.1)
++      helmet:
++        specifier: ^8.3.0
++        version: 8.3.0
+       http-proxy-middleware:
+         specifier: ^4.2.0
+         version: 4.2.0
+@@ -2281,6 +2287,12 @@ packages:
+     resolution: {integrity: sha512-9Be3ZoN4LmYR90tUoVu2te2BsbzHfhJyfEiAVfz7N5/zv+jduIfLrV2xdQXOHbaD6KgpGdO9PRPM1Y4Q9QkPkA==}
+     engines: {node: ^18.19.0 || >=20.5.0}
+ 
++  express-rate-limit@8.7.0:
++    resolution: {integrity: sha512-hOwV7WOxXfjRpAM1DSJWZDXx3GhplwD8IfwuwvogD8i1Qnkgosw/H45s4ZnFAUHDAhPjlY9hLBvJhKmGMyY26g==}
++    engines: {node: '>= 16'}
++    peerDependencies:
++      express: '>= 4.11'
++
+   express@5.2.1:
+     resolution: {integrity: sha512-hIS4idWWai69NezIdRt2xFVofaF4j+6INOpJlVOLDO8zXGpUVEVzIYk12UUi2JzjEzWL3IOAxcTubgz9Po0yXw==}
+     engines: {node: '>= 18'}
+@@ -2455,6 +2467,10 @@ packages:
+     resolution: {integrity: sha512-0hJU9SCPvmMzIBdZFqNPXWa6dqh7WdH0cII9y+CyS8rG3nL48Bclra9HmKhVVUHyPWNH5Y7xDwAB7bfgSjkUMQ==}
+     engines: {node: '>= 0.4'}
+ 
++  helmet@8.3.0:
++    resolution: {integrity: sha512-Qgpiaws3Sm30Av8Eah6sjMCZZwjlBu+E68rhpCWBshY1lb09HtLwj5GviX0OyQIn+ulUS0iX0AxN5n3tLZzz1w==}
++    engines: {node: '>=18.0.0'}
++
+   help-me@5.0.0:
+     resolution: {integrity: sha512-7xgomUX6ADmcYzFik0HzAxh/73YlKR9bmFzf51CZwR+b6YtzU2m0u49hQCqV6SvlqIqsaxovfwdvbnsw3b/zpg==}
+ 
+@@ -2498,6 +2514,10 @@ packages:
+     resolution: {integrity: sha512-5Hh7Y1wQbvY5ooGgPbDaL5iYLAPzMTUrjMulskHLH6wnv/A+1q5rgEaiuqEjB+oxGXIVZs1FF+R/KPN3ZSQYYg==}
+     engines: {node: '>=12'}
+ 
++  ip-address@10.7.0:
++    resolution: {integrity: sha512-BGFsyJd5mpXp3rK6jIdADLNgpJUK1jnjzvYF8lK+VyDab9JAmqN0YOKDdP17HlgKb2+ehPgDc8EtnRLbGCAMhA==}
++    engines: {node: '>= 12'}
++
+   ipaddr.js@1.9.1:
+     resolution: {integrity: sha512-0KI/607xoxSToH7GjN1FfSbLoU0+btTicjsQSWQlh/hZykN8KpmMf7uYwPW3R+akZ6R/w18ZlXSHBYXiYUPO3g==}
+     engines: {node: '>= 0.10'}
+@@ -4817,9 +4837,9 @@ snapshots:
+ 
+   atomic-sleep@1.0.0: {}
+ 
+-  axios@1.15.2:
++  axios@1.15.2(debug@4.4.3):
+     dependencies:
+-      follow-redirects: 1.16.0
++      follow-redirects: 1.16.0(debug@4.4.3)
+       form-data: 4.0.5
+       proxy-from-env: 2.1.0
+     transitivePeerDependencies:
+@@ -5130,6 +5150,14 @@ snapshots:
+       strip-final-newline: 4.0.0
+       yoctocolors: 2.1.2
+ 
++  express-rate-limit@8.7.0(express@5.2.1):
++    dependencies:
++      debug: 4.4.3
++      express: 5.2.1
++      ip-address: 10.7.0
++    transitivePeerDependencies:
++      - supports-color
++
+   express@5.2.1:
+     dependencies:
+       accepts: 2.0.0
+@@ -5235,7 +5263,9 @@ snapshots:
+       locate-path: 8.0.0
+       unicorn-magic: 0.3.0
+ 
+-  follow-redirects@1.16.0: {}
++  follow-redirects@1.16.0(debug@4.4.3):
++    optionalDependencies:
++      debug: 4.4.3
+ 
+   form-data@4.0.5:
+     dependencies:
+@@ -5331,6 +5361,8 @@ snapshots:
+     dependencies:
+       function-bind: 1.1.2
+ 
++  helmet@8.3.0: {}
++
+   help-me@5.0.0: {}
+ 
+   http-errors@2.0.1:
+@@ -5374,6 +5406,8 @@ snapshots:
+ 
+   internmap@2.0.3: {}
+ 
++  ip-address@10.7.0: {}
++
+   ipaddr.js@1.9.1: {}
+ 
+   is-extglob@2.1.1: {}
